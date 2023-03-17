@@ -1,6 +1,7 @@
-use std::io::{BufRead, Read};
-use std::ops::Sub;
+mod tests;
 
+use std::io::{BufRead, Read, Result};
+use std::ops::Sub;
 #[derive(Copy, Clone)]
 enum Token {
     // post-lexing, pre-optimization tokens
@@ -34,13 +35,15 @@ pub struct BrainfuckMachine {
 
 impl BrainfuckMachine {
     pub fn new(size: usize, wrap_tape: bool, wrap_values: bool) -> Self {
-        Self {
+        let mut result = Self {
             size,
             index: 0,
             tape: Vec::new(),
             wrap_tape,
             wrap_values,
-        }
+        };
+        result.tape.resize(size, 0);
+        result
     }
 
     /// Moves the header left by a given amount. If `wrap_tape` is true, wraps the current cell
@@ -110,8 +113,10 @@ impl Lexer {
             Self::tokenize(&to_token)
         }
     }
+    // fn eof(&self) -> bool {}
     fn tokenize(input: &char) -> Option<Token> {
         use crate::brainfuck::Token::*;
+
         match input {
             '+' => Some(Increment),
             '-' => Some(Decrement),
@@ -121,7 +126,7 @@ impl Lexer {
             '.' => Some(PutChar),
             '[' => Some(StartLoop),
             ']' => Some(EndLoop),
-            _ => None
+            _ => None,
         }
     }
     pub fn from_string(input: &'static str) -> Self {
@@ -136,9 +141,17 @@ impl Lexer {
     }
 }
 
-pub struct Parser {}
+pub struct Parser {
+    lexer: Lexer,
+}
 
 impl Parser {
+    // fn parse(&mut self) -> Result<Vec<Token>> {
+    //     let token = self.get_next_token();
+    // }
+    fn get_next_token(&mut self) -> Option<Token> {
+        self.lexer.next_token()
+    }
     fn parse_tokens(&mut self, tokens: Vec<Token>) -> Option<Vec<Token>> {
         let mut loop_stack: Vec<usize> = Vec::new();
         let mut result: Vec<Token> = Vec::new();
@@ -148,12 +161,12 @@ impl Parser {
                     loop_stack.push(addr);
                     result.push(token.clone());
                 }
-                Token::EndLoop => {
-                    match loop_stack.len() {
-                        0 => { return None; }
-                        _ => {}
+                Token::EndLoop => match loop_stack.len() {
+                    0 => {
+                        return None;
                     }
-                }
+                    _ => {}
+                },
                 _ => (),
             };
         }

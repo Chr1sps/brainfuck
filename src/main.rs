@@ -3,9 +3,8 @@ use std::fs::File;
 use std::io::{BufReader, Read};
 use std::path::Path;
 
-// use crate::brainfuck::BrainfuckMachine;
-
 pub mod brainfuck;
+// use crate::brainfuck::BrainfuckMachine;
 
 // struct CLIOption<T> {
 //     name: String,
