@@ -1,7 +1,8 @@
+#[cfg(test)]
 mod tests;
 
-use std::io::{BufRead, Read, Result};
-use std::ops::Sub;
+use std::cmp::Ordering;
+use std::io::Read;
 #[derive(Copy, Clone)]
 enum Token {
     // post-lexing, pre-optimization tokens
@@ -46,11 +47,29 @@ impl BrainfuckMachine {
         result
     }
 
+    fn add_with_wrap(first: usize, other: usize, modulus: usize) -> usize {
+        let negated = modulus - first;
+        match negated.cmp(&other) {
+            Ordering::Greater => first + other,
+            _ => other - negated,
+        }
+    }
+
+    fn sub_with_wrap(first: usize, other: usize, modulus: usize) -> usize {
+        match first.cmp(&other) {
+            Ordering::Less => {
+                let negated = modulus - other;
+                negated + first
+            }
+            _ => first - other,
+        }
+    }
+
     /// Moves the header left by a given amount. If `wrap_tape` is true, wraps the current cell
     /// index when encountering the tape margins.
     pub fn move_left(&mut self, shift: usize) {
         self.index = match self.wrap_tape {
-            true => self.index.wrapping_sub(shift),
+            true => Self::sub_with_wrap(self.index, shift, self.size),
             false => self.index.saturating_sub(shift),
         };
     }
@@ -58,8 +77,8 @@ impl BrainfuckMachine {
     /// index when encountering the tape margins.
     pub fn move_right(&mut self, shift: usize) {
         self.index = match self.wrap_tape {
-            true => self.index.wrapping_add(shift),
-            false => self.index.saturating_add(shift),
+            true => Self::add_with_wrap(self.index, shift, self.size),
+            false => self.index.saturating_add(shift).min(self.size - 1),
         };
     }
 
