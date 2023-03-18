@@ -31,22 +31,27 @@ pub struct BrainfuckMachine {
     /// If true, wraps the tape index on overflows/underflows.
     wrap_tape: bool,
     /// If true, wraps the cell values on overflows/underflows.
-    wrap_values: bool,
+    wrap_cells: bool,
 }
 
 impl BrainfuckMachine {
-    pub fn new(size: usize, wrap_tape: bool, wrap_values: bool) -> Self {
+    /// Creates a `BrainfuckMachine` instance of given tape size and with
+    /// preferred tape/cell value wrapping (tape index and cell values will
+    /// overflow/wrap around the lower and upper limits accordingly).
+    pub fn new(size: usize, wrap_tape: bool, wrap_cells: bool) -> Self {
         let mut result = Self {
             size,
             index: 0,
             tape: Vec::new(),
             wrap_tape,
-            wrap_values,
+            wrap_cells,
         };
         result.tape.resize(size, 0);
         result
     }
 
+    /// Returns `(first + other) % modulus`. This implementation avoids
+    /// over/underflowing values when performing the inner addition.
     fn add_with_wrap(first: usize, other: usize, modulus: usize) -> usize {
         let negated = modulus - first;
         match negated.cmp(&other) {
@@ -55,6 +60,8 @@ impl BrainfuckMachine {
         }
     }
 
+    /// Returns `(first - other) % modulus`. This implementation avoids
+    /// over/underflowing values when performing the inner substraction.
     fn sub_with_wrap(first: usize, other: usize, modulus: usize) -> usize {
         match first.cmp(&other) {
             Ordering::Less => {
@@ -82,27 +89,39 @@ impl BrainfuckMachine {
         };
     }
 
+    /// Adds a given value to the current cell. If `wrap_cells` is true,
+    /// upon overflows the value will be wrapped accordingly. Otherwise, the
+    /// value shall not exceed the upper bound.
     pub fn add(&mut self, value: u8) {
         let current = self.tape[self.index];
-        self.tape[self.index] = match self.wrap_values {
+        self.tape[self.index] = match self.wrap_cells {
             true => current.wrapping_add(value),
             false => current.saturating_add(value),
         };
     }
+
+    /// Substracts a given value from the current cell. If `wrap_cells` is
+    /// true, upon underflows the value will be wrapped accordingly. Otherwise,
+    /// the value shall not exceed the lower bound.
     pub fn substract(&mut self, value: u8) {
         let current = self.tape[self.index];
-        self.tape[self.index] = match self.wrap_values {
+        self.tape[self.index] = match self.wrap_cells {
             true => current.wrapping_sub(value),
             false => current.saturating_sub(value),
         };
     }
 
+    /// Insert a given char's ASCII value into the current cell.
     pub fn read_char(&mut self, input: char) {
         self.tape[self.index] = input as u8
     }
+
+    /// Returns the current cell's value ASCII encoded into a char.
     pub fn put_char(&self) -> char {
         self.tape[self.index] as char
     }
+
+    /// Returns `true` if the current cell's value is non-zero.
     pub fn check_loop(&self) -> bool {
         self.tape[self.index] != 0
     }
