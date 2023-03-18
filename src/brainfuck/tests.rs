@@ -1,7 +1,7 @@
 use super::BrainfuckMachine;
 
 #[test]
-fn test_index_change_base() {
+fn test_machine_index_change_base() {
     let mut machine = BrainfuckMachine::new(10, false, false);
     assert_eq!(machine.index, 0);
     machine.move_right(5);
@@ -10,7 +10,7 @@ fn test_index_change_base() {
     assert_eq!(machine.index, 2);
 }
 #[test]
-fn test_index_change_no_wrap() {
+fn test_machine_index_change_no_wrap() {
     let mut machine = BrainfuckMachine::new(10, false, false);
     machine.move_left(3);
     assert_eq!(
@@ -26,7 +26,7 @@ fn test_index_change_no_wrap() {
     );
 }
 #[test]
-fn test_index_change_wrap() {
+fn test_machine_index_change_wrap() {
     let mut machine = BrainfuckMachine::new(10, true, false);
     machine.move_left(3);
     assert_eq!(
@@ -42,7 +42,7 @@ fn test_index_change_wrap() {
     );
 }
 #[test]
-fn test_value_change_base() {
+fn test_machine_value_change_base() {
     let mut machine = BrainfuckMachine::new(10, false, true);
     assert_eq!(
         machine.tape[machine.index], 0,
@@ -55,7 +55,7 @@ fn test_value_change_base() {
     assert_eq!(machine.tape[machine.index], 27);
 }
 #[test]
-fn test_value_change_wrap() {
+fn test_machine_value_change_wrap() {
     let mut machine = BrainfuckMachine::new(10, false, true);
     assert_eq!(
         machine.tape[machine.index], 0,
@@ -76,7 +76,7 @@ fn test_value_change_wrap() {
     );
 }
 #[test]
-fn test_value_change_no_wrap() {
+fn test_machine_value_change_no_wrap() {
     let mut machine = BrainfuckMachine::new(10, false, false);
     assert_eq!(
         machine.tape[machine.index], 0,
@@ -98,7 +98,7 @@ fn test_value_change_no_wrap() {
     );
 }
 #[test]
-fn test_put_char() {
+fn test_machine_put_char() {
     let mut machine = BrainfuckMachine::new(10, false, false);
     machine.add(65);
     let result: char = machine.put_char();
@@ -109,14 +109,14 @@ fn test_put_char() {
     );
 }
 #[test]
-fn test_read_char() {
+fn test_machine_read_char() {
     let mut machine = BrainfuckMachine::new(10, false, false);
     machine.read_char('A');
     let result = machine.tape[machine.index];
     assert_eq!(result, 65, "Different char read. Char read: {}.", result);
 }
 #[test]
-fn test_check_loop() {
+fn test_machine_check_loop() {
     let mut machine = BrainfuckMachine::new(10, false, false);
     assert!(!machine.check_loop());
     machine.add(4);
