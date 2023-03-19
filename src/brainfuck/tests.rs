@@ -1,4 +1,6 @@
-use super::BrainfuckMachine;
+use crate::brainfuck::Token;
+
+use super::{BrainfuckMachine, Lexer};
 
 #[test]
 fn test_machine_index_change_base() {
@@ -123,4 +125,22 @@ fn test_machine_check_loop() {
     assert!(machine.check_loop());
     machine.substract(4);
     assert!(!machine.check_loop());
+}
+
+#[test]
+fn test_lexer_all_tokens() {
+    use super::Token::*;
+    let code = String::from("><,.+-[]");
+    let mut bytes = code.as_bytes();
+    let mut lexer = Lexer::from_reader(&mut bytes);
+    let expected: Vec<Token> = vec![
+        ShiftRight, ShiftLeft, ReadChar, PutChar, Increment, Decrement, StartLoop, EndLoop,
+    ];
+    for exp in expected {
+        let token = lexer.next_token();
+        assert!(token.is_some());
+        assert_eq!(token.unwrap(), exp);
+    }
+    let token = lexer.next_token();
+    assert!(token.is_none());
 }

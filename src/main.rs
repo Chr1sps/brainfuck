@@ -2,6 +2,7 @@ use std::env;
 use std::fs::File;
 use std::io::{BufReader, Read};
 use std::path::Path;
+use std::slice::Iter;
 
 pub mod brainfuck;
 // use crate::brainfuck::BrainfuckMachine;
@@ -55,11 +56,12 @@ fn main() {
             Ok(file) => file,
             Err(why) => panic!("Couldn't open {}: {}", display, why),
         };
-        let mut reader = BufReader::new(&file);
+        let reader = BufReader::new(&file);
         let mut data = String::new();
         if let Err(why) = file.read_to_string(&mut data) {
             panic!("Couldn't open {}: {}", display, why)
         };
         println!("Data: {}", data);
     }
+    dbg!(&args);
 }

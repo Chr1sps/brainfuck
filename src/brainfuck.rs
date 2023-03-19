@@ -2,8 +2,8 @@
 mod tests;
 
 use std::cmp::Ordering;
-use std::io::Read;
-#[derive(Copy, Clone)]
+use std::io::BufRead;
+#[derive(Copy, Clone, PartialEq, Debug)]
 enum Token {
     // post-lexing, pre-optimization tokens
     Increment,
@@ -136,22 +136,34 @@ impl BrainfuckMachine {
 //
 // stmt := '+' | '-' | '<' | '>' | ',' | '.'
 
-pub struct Lexer {
-    reader: Box<dyn Read>,
+pub struct Lexer<'a> {
+    reader: &'a mut dyn BufRead,
+    eof: bool,
 }
 
-impl Lexer {
+impl<'a> Lexer<'a> {
     fn next_token(&mut self) -> Option<Token> {
         let mut buf: [u8; 1] = [0];
-        if let Err(msg) = self.reader.read_exact(&mut buf) {
-            panic!("Error when reading a token: {}", msg);
-        } else {
-            let ascii = buf[0];
-            let to_token = ascii as char;
-            Self::tokenize(&to_token)
+        match self.reader.read(&mut buf) {
+            Err(msg) => {
+                panic!("Error when reading a token: {}", msg);
+            }
+            Ok(0) => None,
+            Ok(_) => {
+                let ascii = buf[0];
+                let to_token = ascii as char;
+                Self::tokenize(&to_token)
+            }
         }
     }
-    // fn eof(&self) -> bool {}
+    fn eof(&mut self) -> bool {
+        match self.reader.fill_buf() {
+            Ok(buf) => buf.is_empty(),
+            Err(msg) => {
+                panic!("EOF check failed: {}", msg);
+            }
+        }
+    }
     fn tokenize(input: &char) -> Option<Token> {
         use crate::brainfuck::Token::*;
 
@@ -167,23 +179,16 @@ impl Lexer {
             _ => None,
         }
     }
-    pub fn from_string(input: &'static str) -> Self {
-        Self {
-            reader: Box::new(input.as_bytes()),
-        }
-    }
-    pub fn from_reader(reader: impl Read + 'static) -> Self {
-        Self {
-            reader: Box::new(reader),
-        }
+    pub fn from_reader<R: BufRead + Clone + 'a>(reader: &'a mut R) -> Self {
+        Self { reader, eof: false }
     }
 }
 
-pub struct Parser {
-    lexer: Lexer,
+pub struct Parser<'a> {
+    lexer: &'a mut Lexer<'a>,
 }
 
-impl Parser {
+impl<'a> Parser<'a> {
     // fn parse(&mut self) -> Result<Vec<Token>> {
     //     let token = self.get_next_token();
     // }
