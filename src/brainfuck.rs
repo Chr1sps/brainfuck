@@ -17,7 +17,7 @@ enum Token {
     ReadChar,
     // post-optimization tokens
     JumpTo(usize),
-    Add(u8),
+    ChangeValue(u8),
     Move(usize),
 }
 
@@ -135,13 +135,14 @@ impl BrainfuckMachine {
 // loop := '[' stmt_block+ ']'
 //
 // stmt := '+' | '-' | '<' | '>' | ',' | '.'
-
-pub struct Lexer<'a> {
-    reader: &'a mut dyn BufRead,
-    eof: bool,
+struct Lexer<T: BufRead> {
+    reader: T,
 }
 
-impl<'a> Lexer<'a> {
+impl<T: BufRead> Lexer<T> {
+    pub fn from_reader(reader: T) -> Self {
+        Self { reader }
+    }
     fn next_token(&mut self) -> Option<Token> {
         let mut buf: [u8; 1] = [0];
         match self.reader.read(&mut buf) {
@@ -179,40 +180,50 @@ impl<'a> Lexer<'a> {
             _ => None,
         }
     }
-    pub fn from_reader<R: BufRead + Clone + 'a>(reader: &'a mut R) -> Self {
-        Self { reader, eof: false }
+    fn iter(self) -> LexerIter<T> {
+        LexerIter { lexer: self }
     }
 }
 
-pub struct Parser<'a> {
-    lexer: &'a mut Lexer<'a>,
+struct LexerIter<T: BufRead> {
+    lexer: Lexer<T>,
 }
 
-impl<'a> Parser<'a> {
-    // fn parse(&mut self) -> Result<Vec<Token>> {
-    //     let token = self.get_next_token();
-    // }
+impl<T: BufRead> Iterator for LexerIter<T> {
+    type Item = Option<Token>;
+    fn next(&mut self) -> Option<Self::Item> {
+        match self.lexer.eof() {
+            true => None,
+            false => Some(self.lexer.next_token()),
+        }
+    }
+}
+
+impl<T: BufRead> IntoIterator for Lexer<T> {
+    type Item = Option<Token>;
+    type IntoIter = LexerIter<T>;
+    fn into_iter(self) -> Self::IntoIter {
+        self.iter()
+    }
+}
+pub struct Parser<T: BufRead> {
+    lexer: Lexer<T>,
+}
+
+impl<T: BufRead> Parser<T> {
+    fn from_lexer(lexer: Lexer<T>) -> Self {
+        Self { lexer }
+    }
+    fn from_reader(reader: T) -> Self {
+        Self {
+            lexer: Lexer { reader },
+        }
+    }
+    fn parse(&mut self) -> Vec<Token> {
+        let mut result = Vec::new();
+        result
+    }
     fn get_next_token(&mut self) -> Option<Token> {
         self.lexer.next_token()
-    }
-    fn parse_tokens(&mut self, tokens: Vec<Token>) -> Option<Vec<Token>> {
-        let mut loop_stack: Vec<usize> = Vec::new();
-        let mut result: Vec<Token> = Vec::new();
-        for (addr, token) in tokens.iter().enumerate() {
-            match token {
-                Token::StartLoop => {
-                    loop_stack.push(addr);
-                    result.push(token.clone());
-                }
-                Token::EndLoop => match loop_stack.len() {
-                    0 => {
-                        return None;
-                    }
-                    _ => {}
-                },
-                _ => (),
-            };
-        }
-        None
     }
 }

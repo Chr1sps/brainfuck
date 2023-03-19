@@ -1,4 +1,6 @@
-use crate::brainfuck::Token;
+use std::iter::zip;
+
+use crate::brainfuck::Token::{self, *};
 
 use super::{BrainfuckMachine, Lexer};
 
@@ -128,19 +130,108 @@ fn test_machine_check_loop() {
 }
 
 #[test]
-fn test_lexer_all_tokens() {
-    use super::Token::*;
-    let code = String::from("><,.+-[]");
+fn test_lexer_eof_true() {
+    let code = String::from("");
+    let mut lexer = Lexer::from_reader(code.as_bytes());
+    assert!(lexer.eof());
+}
+
+#[test]
+fn test_lexer_eof_false() {
+    let code = String::from(".");
     let mut bytes = code.as_bytes();
     let mut lexer = Lexer::from_reader(&mut bytes);
+    assert!(!lexer.eof());
+}
+
+#[test]
+fn test_lexer_next_token_valid_tokens() {
+    let code = String::from("><,.+-[]");
+    let mut lexer = Lexer::from_reader(code.as_bytes());
     let expected: Vec<Token> = vec![
         ShiftRight, ShiftLeft, ReadChar, PutChar, Increment, Decrement, StartLoop, EndLoop,
     ];
     for exp in expected {
+        assert!(!lexer.eof());
         let token = lexer.next_token();
         assert!(token.is_some());
         assert_eq!(token.unwrap(), exp);
     }
+    assert!(lexer.eof());
     let token = lexer.next_token();
     assert!(token.is_none());
+    assert!(lexer.eof());
+}
+
+#[test]
+fn test_lexer_next_token_other_symbols() {
+    let code = String::from("abcdef");
+    let mut lexer = Lexer::from_reader(code.as_bytes());
+    while !lexer.eof() {
+        let token = lexer.next_token();
+        assert!(token.is_none());
+    }
+}
+
+#[test]
+fn test_lexer_iter_valid_tokens() {
+    let code = String::from("><,.+-[]");
+    let lexer = Lexer::from_reader(code.as_bytes());
+    let expected: Vec<Option<Token>> = vec![
+        Some(ShiftRight),
+        Some(ShiftLeft),
+        Some(ReadChar),
+        Some(PutChar),
+        Some(Increment),
+        Some(Decrement),
+        Some(StartLoop),
+        Some(EndLoop),
+    ];
+    let mut actual: Vec<Option<Token>> = Vec::new();
+    for token in lexer.iter() {
+        actual.push(token);
+    }
+    assert_eq!(expected.len(), actual.len());
+    for (exp, act) in zip(expected, actual) {
+        assert_eq!(exp, act);
+    }
+}
+
+#[test]
+fn test_lexer_iter_other_symbols() {
+    let code = String::from("abcdef");
+    let lexer = Lexer::from_reader(code.as_bytes());
+    let expected: Vec<Option<Token>> = vec![None, None, None, None, None, None];
+    let mut actual: Vec<Option<Token>> = Vec::new();
+    for token in lexer.iter() {
+        actual.push(token);
+    }
+    assert_eq!(expected.len(), actual.len());
+    for (exp, act) in zip(expected, actual) {
+        assert_eq!(exp, act);
+    }
+}
+
+#[test]
+fn test_lexer_for_loop() {
+    let code = String::from("><,.+-[]");
+    let lexer = Lexer::from_reader(code.as_bytes());
+    let expected: Vec<Option<Token>> = vec![
+        Some(ShiftRight),
+        Some(ShiftLeft),
+        Some(ReadChar),
+        Some(PutChar),
+        Some(Increment),
+        Some(Decrement),
+        Some(StartLoop),
+        Some(EndLoop),
+    ];
+    let mut actual: Vec<Option<Token>> = Vec::new();
+    for token in lexer {
+        actual.push(token);
+    }
+    assert_eq!(expected.len(), actual.len());
+    for (exp, act) in zip(expected, actual) {
+        assert_eq!(exp, act);
+    }
 }
