@@ -183,6 +183,9 @@ impl<T: BufRead> Lexer<T> {
     fn iter(self) -> LexerIter<T> {
         LexerIter { lexer: self }
     }
+    fn ref_iter(&mut self) -> LexerRefIter<T> {
+        LexerRefIter { lexer: self }
+    }
 }
 
 struct LexerIter<T: BufRead> {
@@ -206,6 +209,28 @@ impl<T: BufRead> IntoIterator for Lexer<T> {
         self.iter()
     }
 }
+
+struct LexerRefIter<'a, T: BufRead> {
+    lexer: &'a mut Lexer<T>,
+}
+
+impl<'a, T: BufRead> Iterator for LexerRefIter<'a, T> {
+    type Item = Option<Token>;
+    fn next(&mut self) -> Option<Self::Item> {
+        match self.lexer.eof() {
+            true => None,
+            false => Some(self.lexer.next_token()),
+        }
+    }
+}
+
+impl<'a, T: BufRead> IntoIterator for &'a mut Lexer<T> {
+    type Item = Option<Token>;
+    type IntoIter = LexerRefIter<'a, T>;
+    fn into_iter(self) -> Self::IntoIter {
+        self.ref_iter()
+    }
+}
 pub struct Parser<T: BufRead> {
     lexer: Lexer<T>,
 }
@@ -221,6 +246,7 @@ impl<T: BufRead> Parser<T> {
     }
     fn parse(&mut self) -> Vec<Token> {
         let mut result = Vec::new();
+        for token in &mut self.lexer {}
         result
     }
     fn get_next_token(&mut self) -> Option<Token> {
