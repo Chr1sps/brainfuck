@@ -1,8 +1,9 @@
 use std::iter::zip;
 
-use crate::brainfuck::Token::{self, *};
+use crate::brainfuck::Statement;
+use crate::brainfuck::Token;
 
-use super::{BrainfuckMachine, Lexer};
+use super::{BrainfuckMachine, Lexer, Parser};
 
 #[test]
 fn test_machine_index_change_base() {
@@ -149,7 +150,14 @@ fn test_lexer_next_token_valid_tokens() {
     let code = String::from("><,.+-[]");
     let mut lexer = Lexer::from_reader(code.as_bytes());
     let expected: Vec<Token> = vec![
-        ShiftRight, ShiftLeft, ReadChar, PutChar, Increment, Decrement, StartLoop, EndLoop,
+        Token::ShiftRight,
+        Token::ShiftLeft,
+        Token::ReadChar,
+        Token::PutChar,
+        Token::Increment,
+        Token::Decrement,
+        Token::StartLoop,
+        Token::EndLoop,
     ];
     for exp in expected {
         assert!(!lexer.eof());
@@ -178,14 +186,14 @@ fn test_lexer_iter_valid_tokens() {
     let code = String::from("><,.+-[]");
     let lexer = Lexer::from_reader(code.as_bytes());
     let expected: Vec<Option<Token>> = vec![
-        Some(ShiftRight),
-        Some(ShiftLeft),
-        Some(ReadChar),
-        Some(PutChar),
-        Some(Increment),
-        Some(Decrement),
-        Some(StartLoop),
-        Some(EndLoop),
+        Some(Token::ShiftRight),
+        Some(Token::ShiftLeft),
+        Some(Token::ReadChar),
+        Some(Token::PutChar),
+        Some(Token::Increment),
+        Some(Token::Decrement),
+        Some(Token::StartLoop),
+        Some(Token::EndLoop),
     ];
     let mut actual: Vec<Option<Token>> = Vec::new();
     for token in lexer.iter() {
@@ -217,14 +225,14 @@ fn test_lexer_for_loop() {
     let code = String::from("><,.+-[]");
     let lexer = Lexer::from_reader(code.as_bytes());
     let expected: Vec<Option<Token>> = vec![
-        Some(ShiftRight),
-        Some(ShiftLeft),
-        Some(ReadChar),
-        Some(PutChar),
-        Some(Increment),
-        Some(Decrement),
-        Some(StartLoop),
-        Some(EndLoop),
+        Some(Token::ShiftRight),
+        Some(Token::ShiftLeft),
+        Some(Token::ReadChar),
+        Some(Token::PutChar),
+        Some(Token::Increment),
+        Some(Token::Decrement),
+        Some(Token::StartLoop),
+        Some(Token::EndLoop),
     ];
     let mut actual: Vec<Option<Token>> = Vec::new();
     for token in lexer {
@@ -234,4 +242,109 @@ fn test_lexer_for_loop() {
     for (exp, act) in zip(expected, actual) {
         assert_eq!(exp, act);
     }
+}
+
+#[test]
+fn test_parser_parse_empty_string() {
+    let code = String::from("");
+    let mut parser = Parser::from_reader(code.as_bytes());
+    let result = parser.parse();
+    assert!(result.is_ok());
+    assert_eq!(result.unwrap().len(), 0);
+}
+
+#[test]
+fn test_parser_parse_non_loop_statements() {
+    let code = String::from("+-><,.");
+    let mut parser = Parser::from_reader(code.as_bytes());
+    let result = parser.parse();
+    let expected = vec![
+        Statement::ChangeValue(1),
+        Statement::ChangeValue(-1),
+        Statement::Move(1),
+        Statement::Move(-1),
+        Statement::ReadChar,
+        Statement::PutChar,
+    ];
+    assert!(result.is_ok());
+    let unwrapped = result.unwrap();
+    assert_eq!(unwrapped.len(), expected.len());
+    assert_eq!(unwrapped, expected);
+}
+
+#[test]
+fn test_parser_parse_countable_optimization() {
+    let code = String::from("++++----<<<<>>>>");
+    let mut parser = Parser::from_reader(code.as_bytes());
+    let result = parser.parse();
+    let expected = vec![
+        Statement::ChangeValue(4),
+        Statement::ChangeValue(-4),
+        Statement::Move(-4),
+        Statement::Move(4),
+    ];
+    assert!(result.is_ok());
+    let unwrapped = result.unwrap();
+    assert_eq!(unwrapped.len(), expected.len());
+    assert_eq!(unwrapped, expected);
+}
+
+#[test]
+fn test_parser_parse_loop_valid() {
+    let code = String::from("[++++----<<<<>>>>]");
+    let mut parser = Parser::from_reader(code.as_bytes());
+    let result = parser.parse();
+    let expected = vec![
+        Statement::ChangeValue(4),
+        Statement::ChangeValue(-4),
+        Statement::Move(-4),
+        Statement::Move(4),
+        Statement::JumpIf(0),
+    ];
+    assert!(result.is_ok());
+    let unwrapped = result.unwrap();
+    assert_eq!(unwrapped.len(), expected.len());
+    assert_eq!(unwrapped, expected);
+}
+
+#[test]
+fn test_parser_parse_loop_invalid_redundant_left_bracket() {
+    let code = String::from("[[++++----<<<<>>>>]");
+    let mut parser = Parser::from_reader(code.as_bytes());
+    let result = parser.parse();
+    assert!(result.is_err());
+    assert_eq!(
+        result.unwrap_err(),
+        "Error: '[' found with no matching ']'.".to_string()
+    );
+}
+
+#[test]
+fn test_parser_parse_loop_invalid_redundant_right_bracket() {
+    let code = String::from("[++++----]<<<<>>>>]");
+    let mut parser = Parser::from_reader(code.as_bytes());
+    let result = parser.parse();
+    assert!(result.is_err());
+    assert_eq!(
+        result.unwrap_err(),
+        "Error: ']' found with no matching '['.".to_string()
+    );
+}
+
+#[test]
+fn test_parser_parse_loop_optimize_remove_empty_loops() {
+    let code = String::from("[][][]");
+    let mut parser = Parser::from_reader(code.as_bytes());
+    let result = parser.parse();
+    assert!(result.is_ok());
+    assert!(result.unwrap().is_empty());
+}
+
+#[test]
+fn test_parser_parse_loop_optimize_remove_empty_loops_nested() {
+    let code = String::from("[[[]]]");
+    let mut parser = Parser::from_reader(code.as_bytes());
+    let result = parser.parse();
+    assert!(result.is_ok());
+    assert!(result.unwrap().is_empty());
 }

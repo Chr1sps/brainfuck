@@ -3,6 +3,7 @@ mod tests;
 
 use std::cmp::Ordering;
 use std::io::BufRead;
+
 #[derive(Copy, Clone, PartialEq, Debug)]
 enum Token {
     // post-lexing, pre-optimization tokens
@@ -15,10 +16,32 @@ enum Token {
     // io tokens
     PutChar,
     ReadChar,
-    // post-optimization tokens
-    JumpTo(usize),
-    ChangeValue(u8),
-    Move(usize),
+}
+
+#[derive(Copy, Clone, PartialEq, Debug)]
+enum Statement {
+    Move(isize),
+    ChangeValue(i8),
+    JumpIf(usize),
+    PutChar,
+    ReadChar,
+}
+
+impl Token {
+    fn is_countable(&self) -> bool {
+        use self::Token::*;
+        match self {
+            &(Increment | Decrement | ShiftLeft | ShiftRight) => true,
+            _ => false,
+        }
+    }
+    fn is_loop(&self) -> bool {
+        use self::Token::*;
+        match self {
+            &(StartLoop | EndLoop) => true,
+            _ => false,
+        }
+    }
 }
 
 pub struct BrainfuckMachine {
@@ -244,12 +267,79 @@ impl<T: BufRead> Parser<T> {
             lexer: Lexer { reader },
         }
     }
-    fn parse(&mut self) -> Vec<Token> {
+    fn parse(&mut self) -> Result<Vec<Statement>, String> {
         let mut result = Vec::new();
-        for token in &mut self.lexer {}
-        result
+        let mut token_count: usize = 0;
+        let mut last_token = Token::ShiftLeft;
+        let mut loop_stack: Vec<usize> = Vec::new();
+
+        for opt_token in &mut self.lexer {
+            match opt_token {
+                Some(token) if token == last_token => {
+                    if token.is_countable() {
+                        token_count += 1;
+                    }
+                    if let Token::StartLoop = token {
+                        loop_stack.push(result.len());
+                    } else if let Token::EndLoop = token {
+                        let address_opt = loop_stack.pop();
+                        match address_opt {
+                            Some(address) if address == result.len() => {}
+                            Some(address) => {
+                                result.push(Statement::JumpIf(address));
+                            }
+                            None => {
+                                return Err("Error: ']' found with no matching '['.".to_string())
+                            }
+                        }
+                    }
+                }
+                Some(token) => {
+                    if token_count != 0 {
+                        let stmt_to_push = Self::generate_optimized_stmt(last_token, token_count);
+                        result.push(stmt_to_push);
+                    }
+                    if let Token::StartLoop = token {
+                        loop_stack.push(result.len());
+                    } else if let Token::EndLoop = token {
+                        let address_opt = loop_stack.pop();
+                        match address_opt {
+                            Some(address) if address == result.len() => {}
+                            Some(address) => {
+                                result.push(Statement::JumpIf(address));
+                            }
+                            None => {
+                                return Err("Error: ']' found with no matching '['.".to_string())
+                            }
+                        }
+                    }
+                    if token.is_countable() {
+                        token_count = 1;
+                    } else {
+                        token_count = 0;
+                    }
+                    last_token = token;
+                }
+                None => {}
+            }
+        }
+        if !loop_stack.is_empty() {
+            Err("Error: '[' found with no matching ']'.".to_string())
+        } else {
+            if token_count != 0 {
+                let stmt_to_push = Self::generate_optimized_stmt(last_token, token_count);
+                result.push(stmt_to_push);
+            }
+            Ok(result)
+        }
     }
-    fn get_next_token(&mut self) -> Option<Token> {
-        self.lexer.next_token()
+    fn generate_optimized_stmt(token: Token, count: usize) -> Statement {
+        match token {
+            Token::Increment => Statement::ChangeValue(count as i8),
+            Token::Decrement => Statement::ChangeValue(-(count as i8)),
+            Token::ShiftLeft => Statement::Move(-(count as isize)),
+            Token::ShiftRight => Statement::Move(count as isize),
+            _ => panic!("Ehmmm... wtf?"),
+        }
     }
 }
