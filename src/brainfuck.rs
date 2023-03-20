@@ -275,48 +275,41 @@ impl<T: BufRead> Parser<T> {
 
         for opt_token in &mut self.lexer {
             match opt_token {
-                Some(token) if token == last_token => {
-                    if token.is_countable() {
-                        token_count += 1;
-                    }
-                    if let Token::StartLoop = token {
-                        loop_stack.push(result.len());
-                    } else if let Token::EndLoop = token {
-                        let address_opt = loop_stack.pop();
-                        match address_opt {
-                            Some(address) if address == result.len() => {}
-                            Some(address) => {
-                                result.push(Statement::JumpIf(address));
-                            }
-                            None => {
-                                return Err("Error: ']' found with no matching '['.".to_string())
-                            }
-                        }
-                    }
-                }
                 Some(token) => {
-                    if token_count != 0 {
-                        let stmt_to_push = Self::generate_optimized_stmt(last_token, token_count);
-                        result.push(stmt_to_push);
+                    if token != last_token {
+                        if token_count != 0 {
+                            // case when countable last_token
+                            let stmt_to_push =
+                                Self::generate_optimized_stmt(last_token, token_count);
+                            result.push(stmt_to_push);
+                        }
+                        token_count = 0;
                     }
-                    if let Token::StartLoop = token {
-                        loop_stack.push(result.len());
-                    } else if let Token::EndLoop = token {
-                        let address_opt = loop_stack.pop();
-                        match address_opt {
-                            Some(address) if address == result.len() => {}
-                            Some(address) => {
-                                result.push(Statement::JumpIf(address));
-                            }
-                            None => {
-                                return Err("Error: ']' found with no matching '['.".to_string())
+                    match token {
+                        Token::StartLoop => {
+                            loop_stack.push(result.len());
+                        }
+                        Token::EndLoop => {
+                            let address_opt = loop_stack.pop();
+                            match address_opt {
+                                Some(address) if address == result.len() => {}
+                                Some(address) => {
+                                    result.push(Statement::JumpIf(address));
+                                }
+                                None => {
+                                    return Err("Error: ']' found with no matching '['.".to_string())
+                                }
                             }
                         }
-                    }
-                    if token.is_countable() {
-                        token_count = 1;
-                    } else {
-                        token_count = 0;
+                        Token::PutChar => {
+                            result.push(Statement::PutChar);
+                        }
+                        Token::ReadChar => {
+                            result.push(Statement::ReadChar);
+                        }
+                        _ => {
+                            token_count += 1;
+                        }
                     }
                     last_token = token;
                 }
