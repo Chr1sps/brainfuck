@@ -1,8 +1,11 @@
-#[cfg(test)]
-mod tests;
+// #[cfg(test)]
+// mod tests;
 
 use std::cmp::Ordering;
 use std::io::BufRead;
+
+#[cfg(test)]
+mod tests;
 
 #[derive(Copy, Clone, PartialEq, Debug)]
 enum Token {
@@ -189,7 +192,7 @@ impl<T: BufRead> Lexer<T> {
         }
     }
     fn tokenize(input: &char) -> Option<Token> {
-        use crate::brainfuck::Token::*;
+        use crate::Token::*;
 
         match input {
             '+' => Some(Increment),

@@ -1,10 +1,9 @@
 use std::iter::zip;
 
-use crate::brainfuck::Statement;
-use crate::brainfuck::Token;
+use crate::Statement;
+use crate::Token;
 
 use super::{BrainfuckMachine, Lexer, Parser};
-
 #[test]
 fn test_machine_index_change_base() {
     let mut machine = BrainfuckMachine::new(10, false, false);

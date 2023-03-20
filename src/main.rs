@@ -3,7 +3,7 @@ use std::fs::File;
 use std::io::Read;
 use std::path::Path;
 
-pub mod brainfuck;
+// pub mod brainfuck;
 // use crate::brainfuck::BrainfuckMachine;
 
 // struct CLIOption<T> {
@@ -62,4 +62,6 @@ fn main() {
         println!("Data: {}", data);
     }
     dbg!(&args);
+    let over: u8 = 128;
+    println!("Over: {}", over as i8);
 }
