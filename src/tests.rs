@@ -258,10 +258,10 @@ fn test_parser_parse_non_loop_statements() {
     let mut parser = Parser::from_reader(code.as_bytes());
     let result = parser.parse();
     let expected = vec![
-        Statement::ChangeValue(1),
-        Statement::ChangeValue(-1),
-        Statement::Move(1),
-        Statement::Move(-1),
+        Statement::Add(1),
+        Statement::Substract(1),
+        Statement::MoveRight(1),
+        Statement::MoveLeft(1),
         Statement::ReadChar,
         Statement::PutChar,
     ];
@@ -277,10 +277,22 @@ fn test_parser_parse_countable_optimization() {
     let mut parser = Parser::from_reader(code.as_bytes());
     let result = parser.parse();
     let expected = vec![
-        Statement::ChangeValue(4),
-        Statement::ChangeValue(-4),
-        Statement::Move(-4),
-        Statement::Move(4),
+        Statement::Add(1),
+        Statement::Add(1),
+        Statement::Add(1),
+        Statement::Add(1),
+        Statement::Substract(1),
+        Statement::Substract(1),
+        Statement::Substract(1),
+        Statement::Substract(1),
+        Statement::MoveLeft(1),
+        Statement::MoveLeft(1),
+        Statement::MoveLeft(1),
+        Statement::MoveLeft(1),
+        Statement::MoveRight(1),
+        Statement::MoveRight(1),
+        Statement::MoveRight(1),
+        Statement::MoveRight(1),
     ];
     assert!(result.is_ok());
     let unwrapped = result.unwrap();
@@ -290,14 +302,14 @@ fn test_parser_parse_countable_optimization() {
 
 #[test]
 fn test_parser_parse_loop_valid() {
-    let code = String::from("[++++----<<<<>>>>]");
+    let code = String::from("[+-<>]");
     let mut parser = Parser::from_reader(code.as_bytes());
     let result = parser.parse();
     let expected = vec![
-        Statement::ChangeValue(4),
-        Statement::ChangeValue(-4),
-        Statement::Move(-4),
-        Statement::Move(4),
+        Statement::Add(1),
+        Statement::Substract(1),
+        Statement::MoveLeft(1),
+        Statement::MoveRight(1),
         Statement::JumpIf(0),
     ];
     assert!(result.is_ok());
