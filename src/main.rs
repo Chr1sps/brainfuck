@@ -1,7 +1,10 @@
-use std::env;
 use std::fs::File;
-use std::io::Read;
+use std::io::{Read, Write};
 use std::path::Path;
+use std::{env, io};
+extern crate termios;
+use std::os::unix::io::RawFd;
+use termios::{tcsetattr, Termios, ICANON, TCSANOW};
 
 // pub mod brainfuck;
 // use crate::brainfuck::BrainfuckMachine;
@@ -62,6 +65,18 @@ fn main() {
         println!("Data: {}", data);
     }
     dbg!(&args);
-    let over: u8 = 128;
-    println!("Over: {}", over as i8);
+    println!("{}", env::consts::OS);
+
+    let termios = Termios::from_fd(0).unwrap();
+    let mut new_termios = termios.clone();
+    new_termios.c_lflag &= !(ICANON);
+
+    tcsetattr(0, TCSANOW, &mut new_termios).unwrap();
+    let stdout = io::stdout();
+    let mut buffer = [0; 1];
+    let mut reader = io::stdin();
+    stdout.lock().flush().unwrap();
+    reader.read_exact(&mut buffer).unwrap();
+    println!("{:?}", buffer[0] as char);
+    tcsetattr(0, TCSANOW, &termios).unwrap();
 }

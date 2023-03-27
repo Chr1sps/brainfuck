@@ -1,5 +1,6 @@
 use std::iter::zip;
 
+use crate::Optimizer;
 use crate::Statement;
 use crate::Token;
 
@@ -358,4 +359,75 @@ fn test_parser_parse_loop_optimize_remove_empty_loops_nested() {
     let result = parser.parse();
     assert!(result.is_ok());
     assert!(result.unwrap().is_empty());
+}
+
+#[test]
+fn test_optimizer_optimize_once_no_optimization() {
+    let statements: Vec<Statement> = vec![
+        Statement::ReadChar,
+        Statement::PutChar,
+        Statement::MoveRight(1),
+        Statement::Add(1),
+        Statement::MoveLeft(1),
+        Statement::Substract(1),
+        Statement::JumpIf(0),
+    ];
+    let mut optimizer = Optimizer::new(statements.clone(), false, false);
+    optimizer.optimize_once();
+    let optimized = optimizer.yield_back();
+    assert_eq!(statements, optimized);
+}
+
+#[test]
+fn test_optimizer_optimize_once_optimize_adds() {
+    let statements: Vec<Statement> = vec![
+        Statement::Add(1),
+        Statement::Add(2),
+        Statement::Add(3),
+        Statement::Add(4),
+    ];
+    let mut optimizer = Optimizer::new(statements.clone(), false, false);
+    optimizer.optimize_once();
+    let optimized = optimizer.yield_back();
+    assert_ne!(statements, optimized);
+    assert_eq!(optimized.len(), 1);
+    let final_statement = optimized[0];
+    assert_eq!(final_statement, Statement::Add(10));
+}
+
+#[test]
+fn test_optimizer_optimize_once_optimize_adds_and_subs() {
+    let statements: Vec<Statement> = vec![
+        Statement::Add(3),
+        Statement::Substract(2),
+        Statement::Add(4),
+        Statement::Substract(1),
+        Statement::Add(1),
+        Statement::Substract(1),
+        Statement::Add(1),
+    ];
+    let mut optimizer = Optimizer::new(statements.clone(), false, false);
+    optimizer.optimize_once();
+    let optimized = optimizer.yield_back();
+    assert_ne!(statements, optimized);
+    assert_eq!(optimized.len(), 1);
+    let final_statement = optimized[0];
+    assert_eq!(final_statement, Statement::Add(5));
+}
+
+#[test]
+fn test_optimizer_optimize_once_optimize_adds_and_subs_underflow() {
+    let statements: Vec<Statement> = vec![
+        Statement::Add(3),
+        Statement::Substract(2),
+        Statement::Add(4),
+        Statement::Substract(6),
+    ];
+    let mut optimizer = Optimizer::new(statements.clone(), false, false);
+    optimizer.optimize_once();
+    let optimized = optimizer.yield_back();
+    assert_ne!(statements, optimized);
+    assert_eq!(optimized.len(), 1);
+    let final_statement = optimized[0];
+    assert_eq!(final_statement, Statement::Substract(1));
 }

@@ -21,6 +21,17 @@ enum Token {
     ReadChar,
 }
 
+impl Token {
+    fn is_countable(&self) -> bool {
+        use self::Token::*;
+        matches!(self, &(Increment | Decrement | ShiftLeft | ShiftRight))
+    }
+    fn is_loop(&self) -> bool {
+        use self::Token::*;
+        matches!(self, &(StartLoop | EndLoop))
+    }
+}
+
 #[derive(Copy, Clone, PartialEq, Debug)]
 enum Statement {
     MoveLeft(usize),
@@ -34,23 +45,17 @@ enum Statement {
     ReadChar,
 }
 
-impl Token {
-    fn is_countable(&self) -> bool {
-        use self::Token::*;
-        match self {
-            &(Increment | Decrement | ShiftLeft | ShiftRight) => true,
-            _ => false,
-        }
+impl Statement {
+    fn is_equal_type(&self, other: &Self) -> bool {
+        std::mem::discriminant(self) == std::mem::discriminant(other)
     }
-    fn is_loop(&self) -> bool {
-        use self::Token::*;
-        match self {
-            &(StartLoop | EndLoop) => true,
-            _ => false,
-        }
+    fn changes_value(&self) -> bool {
+        matches!(self, &(Statement::Add(_) | Statement::Substract(_)))
+    }
+    fn moves_header(&self) -> bool {
+        matches!(self, &(Statement::MoveLeft(_) | Statement::MoveRight(_)))
     }
 }
-
 pub struct BrainfuckMachine {
     /// Size of the tape vector.
     size: usize,
@@ -307,119 +312,147 @@ impl<T: BufRead> Parser<T> {
             Ok(result)
         }
     }
-    // fn parse(&mut self) -> Result<Vec<Statement>, String> {
-    //     let mut result = Vec::new();
-    //     let mut token_count: usize = 0;
-    //     let mut last_token = Token::ShiftLeft;
-    //     let mut loop_stack: Vec<usize> = Vec::new();
-
-    //     for opt_token in &mut self.lexer {
-    //         match opt_token {
-    //             Some(token) => {
-    //                 if token != last_token {
-    //                     if token_count != 0 {
-    //                         // case when countable last_token
-    //                         let stmt_to_push =
-    //                             Self::generate_optimized_stmt(last_token, token_count);
-    //                         result.push(stmt_to_push);
-    //                     }
-    //                     token_count = 0;
-    //                 }
-    //                 match token {
-    //                     Token::StartLoop => {
-    //                         loop_stack.push(result.len());
-    //                     }
-    //                     Token::EndLoop => {
-    //                         let address_opt = loop_stack.pop();
-    //                         match address_opt {
-    //                             Some(address) if address == result.len() => {}
-    //                             Some(address) => {
-    //                                 result.push(Statement::JumpIf(address));
-    //                             }
-    //                             None => {
-    //                                 return Err("Error: ']' found with no matching '['.".to_string())
-    //                             }
-    //                         }
-    //                     }
-    //                     Token::PutChar => {
-    //                         result.push(Statement::PutChar);
-    //                     }
-    //                     Token::ReadChar => {
-    //                         result.push(Statement::ReadChar);
-    //                     }
-    //                     _ => {
-    //                         token_count += 1;
-    //                     }
-    //                 }
-    //                 last_token = token;
-    //             }
-    //             None => {}
-    //         }
-    //     }
-    //     if !loop_stack.is_empty() {
-    //         Err("Error: '[' found with no matching ']'.".to_string())
-    //     } else {
-    //         if token_count != 0 {
-    //             let stmt_to_push = Self::generate_optimized_stmt(last_token, token_count);
-    //             result.push(stmt_to_push);
-    //         }
-    //         Ok(result)
-    //     }
-    // }
 }
 
 struct Optimizer {
     statements: Vec<Statement>,
+    wrap_tape: bool,
+    wrap_cells: bool,
 }
 
 impl Optimizer {
-    fn new(statements: Vec<Statement>) -> Self {
-        Self { statements }
-    }
-    fn optimize_once(&mut self) {
-        enum CountType {
-            Move,
-            ChangeValue,
+    fn new(statements: Vec<Statement>, wrap_tape: bool, wrap_cells: bool) -> Self {
+        Self {
+            statements,
+            wrap_tape,
+            wrap_cells,
         }
-        let mut result: Vec<Statement> = Vec::new();
-        let mut stmt_count: usize = 0;
-        let mut count_type = CountType::Move;
-        let mut return_addresses: Vec<usize> = Vec::new();
+    }
 
+    fn get_return_addresses(&mut self) -> Vec<usize> {
+        let mut return_addresses: Vec<usize> = Vec::new();
         for statement in &self.statements {
             match statement {
                 Statement::JumpIf(address) => return_addresses.push(*address),
                 _ => {}
             }
         }
+        return_addresses
+    }
+
+    fn generate_optimized_stmt(stmt_type: Statement, value: &mut usize) -> Option<Statement> {
+        let result = match value {
+            0 => None,
+            _ => match stmt_type {
+                Statement::Add(_) => Some(Statement::Add(*value as u8)),
+                Statement::Substract(_) => Some(Statement::Substract(*value as u8)),
+                Statement::MoveLeft(_) => Some(Statement::MoveLeft(*value)),
+                Statement::MoveRight(_) => Some(Statement::MoveRight(*value)),
+                _ => None,
+            },
+        };
+        *value = 0;
+        result
+    }
+
+    fn optimize_once(&mut self) {
+        let mut result: Vec<Statement> = Vec::new();
+        let mut stmt_count: usize = 0;
+        let mut add_count: u8 = 0;
+        let mut last_statement = Statement::ReadChar;
 
         // return_addresses.sort();
         // return_addresses.dedup();
 
         for (index, statement) in (&mut self.statements).into_iter().enumerate() {
+            if !statement.is_equal_type(&last_statement) {
+                match Self::generate_optimized_stmt(last_statement, &mut stmt_count) {
+                    Some(statement) => result.push(statement),
+                    None => {}
+                }
+            }
+            last_statement = *statement;
             match statement {
-                Statement::MoveLeft(value) => {}
-                Statement::MoveRight(value) => {}
-                Statement::Add(value) => {}
-                Statement::Substract(value) => {}
+                Statement::MoveLeft(value) => result.push(Statement::MoveLeft(*value)),
+                Statement::MoveRight(value) => result.push(Statement::MoveRight(*value)),
+                Statement::Add(value) => {
+                    stmt_count += *value as usize;
+                }
+                Statement::Substract(value) => result.push(Statement::Substract(*value)),
                 stmt @ (Statement::PutChar | Statement::ReadChar) => result.push(*stmt),
-                Statement::JumpIf(addr) => {}
+                Statement::JumpIf(addr) => result.push(Statement::JumpIf(*addr)),
             }
         }
+
+        match Self::generate_optimized_stmt(last_statement, &mut stmt_count) {
+            Some(statement) => result.push(statement),
+            None => {}
+        }
+        // fn parse(&mut self) -> Result<Vec<Statement>, String> {
+        //     let mut result = Vec::new();
+        //     let mut token_count: usize = 0;
+        //     let mut last_token = Token::ShiftLeft;
+        //     let mut loop_stack: Vec<usize> = Vec::new();
+
+        //     for opt_token in &mut self.lexer {
+        //         match opt_token {
+        //             Some(token) => {
+        //                 if token != last_token {
+        //                     if token_count != 0 {
+        //                         // case when countable last_token
+        //                         let stmt_to_push =
+        //                             Self::generate_optimized_stmt(last_token, token_count);
+        //                         result.push(stmt_to_push);
+        //                     }
+        //                     token_count = 0;
+        //                 }
+        //                 match token {
+        //                     Token::StartLoop => {
+        //                         loop_stack.push(result.len());
+        //                     }
+        //                     Token::EndLoop => {
+        //                         let address_opt = loop_stack.pop();
+        //                         match address_opt {
+        //                             Some(address) if address == result.len() => {}
+        //                             Some(address) => {
+        //                                 result.push(Statement::JumpIf(address));
+        //                             }
+        //                             None => {
+        //                                 return Err("Error: ']' found with no matching '['.".to_string())
+        //                             }
+        //                         }
+        //                     }
+        //                     Token::PutChar => {
+        //                         result.push(Statement::PutChar);
+        //                     }
+        //                     Token::ReadChar => {
+        //                         result.push(Statement::ReadChar);
+        //                     }
+        //                     _ => {
+        //                         token_count += 1;
+        //                     }
+        //                 }
+        //                 last_token = token;
+        //             }
+        //             None => {}
+        //         }
+        //     }
+        //     if !loop_stack.is_empty() {
+        //         Err("Error: '[' found with no matching ']'.".to_string())
+        //     } else {
+        //         if token_count != 0 {
+        //             let stmt_to_push = Self::generate_optimized_stmt(last_token, token_count);
+        //             result.push(stmt_to_push);
+        //         }
+        //         Ok(result)
+        //     }
+        // }
         self.statements = result;
     }
+
     fn yield_back(self) -> Vec<Statement> {
         self.statements
     }
-    // fn generate_optimized_stmt(token: Token, count: usize) -> Statement {
-    //     match token {
-    //         Token::Increment => Statement::ChangeValue(count as i8),
-    //         Token::Decrement => Statement::ChangeValue(-(count as i8)),
-    //         Token::ShiftLeft => Statement::Move(-(count as isize)),
-    //         Token::ShiftRight => Statement::Move(count as isize),
-    //         _ => panic!("Ehmmm... wtf?"),
-    //     }
-    // }
 }
 
 struct MachineRunner {
@@ -436,15 +469,32 @@ impl MachineRunner {
         loop {
             let statement = statements[self.index];
             match statement {
-                Statement::MoveLeft(value) => {}
-                Statement::MoveRight(value) => {}
-                Statement::Add(value) => {}
-                Statement::Substract(value) => {}
-                Statement::ReadChar => {}
-                Statement::PutChar => {}
-                Statement::JumpIf(address) => {}
+                Statement::MoveLeft(value) => self.machine.move_left(value),
+                Statement::MoveRight(value) => self.machine.move_right(value),
+                Statement::Add(value) => self.machine.add(value),
+                Statement::Substract(value) => self.machine.add(value),
+                Statement::ReadChar => {
+                    let chr = self.get_char();
+                    self.machine.read_char(chr);
+                }
+                Statement::PutChar => {
+                    let chr = self.machine.put_char();
+                    print!("{}", chr);
+                }
+                Statement::JumpIf(address) => {
+                    if !self.machine.check_loop() {
+                        self.index = address;
+                        continue;
+                    }
+                }
             }
+            self.index += 1;
         }
+    }
+
+    fn get_char(&mut self) -> char {
+        // TODO: implement getting a single char
+        todo!();
     }
 }
 
