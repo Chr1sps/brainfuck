@@ -455,49 +455,6 @@ impl Optimizer {
     }
 }
 
-struct MachineRunner {
-    machine: BrainfuckMachine,
-    index: usize,
-}
-
-impl MachineRunner {
-    fn new(machine: BrainfuckMachine) -> Self {
-        Self { machine, index: 0 }
-    }
-
-    fn run(&mut self, statements: Vec<Statement>) {
-        loop {
-            let statement = statements[self.index];
-            match statement {
-                Statement::MoveLeft(value) => self.machine.move_left(value),
-                Statement::MoveRight(value) => self.machine.move_right(value),
-                Statement::Add(value) => self.machine.add(value),
-                Statement::Substract(value) => self.machine.add(value),
-                Statement::ReadChar => {
-                    let chr = self.get_char();
-                    self.machine.read_char(chr);
-                }
-                Statement::PutChar => {
-                    let chr = self.machine.put_char();
-                    print!("{}", chr);
-                }
-                Statement::JumpIf(address) => {
-                    if !self.machine.check_loop() {
-                        self.index = address;
-                        continue;
-                    }
-                }
-            }
-            self.index += 1;
-        }
-    }
-
-    fn get_char(&mut self) -> char {
-        // TODO: implement getting a single char
-        todo!();
-    }
-}
-
 struct Interpreter<T: BufRead> {
     parser: Parser<T>,
     machine: BrainfuckMachine,
@@ -515,5 +472,38 @@ impl<T: BufRead> Interpreter<T> {
             .parser
             .parse()
             .unwrap_or_else(|msg| panic!("Error when running code: {}.", msg));
+    }
+
+    fn get_char(&mut self) -> char {
+        // TODO: implement getting a single char
+        todo!();
+    }
+
+    fn run(&mut self, statements: Vec<Statement>) {
+        let mut index: usize = 0;
+        loop {
+            let statement = statements[index];
+            match statement {
+                Statement::MoveLeft(value) => self.machine.move_left(value),
+                Statement::MoveRight(value) => self.machine.move_right(value),
+                Statement::Add(value) => self.machine.add(value),
+                Statement::Substract(value) => self.machine.add(value),
+                Statement::ReadChar => {
+                    let chr = self.get_char();
+                    self.machine.read_char(chr);
+                }
+                Statement::PutChar => {
+                    let chr = self.machine.put_char();
+                    print!("{}", chr);
+                }
+                Statement::JumpIf(address) => {
+                    if !self.machine.check_loop() {
+                        index = address;
+                        continue;
+                    }
+                }
+            }
+            index += 1;
+        }
     }
 }

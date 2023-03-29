@@ -67,16 +67,19 @@ fn main() {
     dbg!(&args);
     println!("{}", env::consts::OS);
 
+    // this sets the console to only read a single char at once
     let termios = Termios::from_fd(0).unwrap();
     let mut new_termios = termios.clone();
     new_termios.c_lflag &= !(ICANON);
-
     tcsetattr(0, TCSANOW, &mut new_termios).unwrap();
+
     let stdout = io::stdout();
     let mut buffer = [0; 1];
     let mut reader = io::stdin();
     stdout.lock().flush().unwrap();
     reader.read_exact(&mut buffer).unwrap();
     println!("{:?}", buffer[0] as char);
+
+    // this resets the console back to its normal state
     tcsetattr(0, TCSANOW, &termios).unwrap();
 }
