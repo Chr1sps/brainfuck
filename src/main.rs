@@ -1,49 +1,8 @@
-use std::io::{Error, ErrorKind, Result};
-extern crate termios;
 use brainfuck::Interpreter;
 use clap::Parser as ClapParser;
+use std::io::{Error, ErrorKind, Result};
 
-// pub mod brainfuck;
-// use crate::brainfuck::BrainfuckMachine;
-
-// struct CLIOption<T> {
-//     name: String,
-//     value: T,
-// }
-//
-// impl CLIOption<String> {
-//     fn make_option(name: String, value: String) -> Self <String> {
-//         Self {
-//             name,
-//             value: value.strip_prefix("--").unwrap().to_string(),
-//         }
-//     }
-// }
-//
-// impl<T> CLIOption<T> where T: num::Integer {
-//     fn make_option(name: String, value: String) -> Self <T> {
-//         Self {
-//             name,
-//             value: value.trim().parse(),
-//         }
-//     }
-// }
-//
-
-// CLI args grammar:
-// args := args_with_filename | options
-//
-// args_with_filename := (options ' ')? filename (' ' options)?
-//
-// options := option (' ' option)*
-//
-// option := '--' name (' ' value)?
-//
-// filename := $ dozwolona nazwa pliku w danym systemie $
-// name := $ dowolna pasująca nazwa $
-// value := $ dowolna pasująca wartość $
-
-#[derive(ClapParser)]
+#[derive(ClapParser, Debug)]
 #[command(name = "Brainfuck interpreter")]
 #[command(author = "Chr1sps")]
 #[command(version = "1.0")]
@@ -55,6 +14,25 @@ struct Cli {
 
     /// Name of the file to open.
     file: Option<String>,
+
+    #[arg(default_value_t = 0, short, long, value_name = "COUNT")]
+    /// How many iterations of optimizing to run on the parsed code. Entering
+    /// negative values means that the optimizer will run until the code is
+    /// fully optimized.
+    optimize: isize,
+
+    #[arg(default_value_t = false, long)]
+    /// Outputs the machine binary data. Exclusive with "--hex".
+    binary: bool,
+
+    #[arg(default_value_t = false, long)]
+    /// Outputs the machine hex data. Exclusive with "--binary".
+    hex: bool,
+
+    #[arg(long, value_name = "FILE")]
+    /// Outputs the machine data to a given FILE. Use "--hex" and "--binary" to
+    /// switch from ASCII encoding to other formats.
+    output: Option<String>,
 }
 
 fn main() -> Result<()> {

@@ -8,8 +8,6 @@ use std::io::{self, BufRead, BufReader, Error, ErrorKind, Read, Result, Write};
 use std::os::unix::io::AsRawFd;
 use std::path::Path;
 
-use termios::Termios;
-
 #[cfg(test)]
 mod tests;
 
@@ -25,17 +23,6 @@ enum Token {
     // io tokens
     PutChar,
     ReadChar,
-}
-
-impl Token {
-    fn is_countable(&self) -> bool {
-        use self::Token::*;
-        matches!(self, &(Increment | Decrement | ShiftLeft | ShiftRight))
-    }
-    fn is_loop(&self) -> bool {
-        use self::Token::*;
-        matches!(self, &(StartLoop | EndLoop))
-    }
 }
 
 #[derive(Copy, Clone, PartialEq, Debug)]
@@ -297,7 +284,6 @@ impl<T: BufRead> Parser<T> {
                 "Error: '[' found with no matching ']'.".to_string(),
             ))
         } else {
-            dbg!(Code { code: &result });
             Ok(result)
         }
     }
@@ -444,6 +430,12 @@ pub struct Interpreter<T: BufRead> {
 impl Interpreter<BufReader<File>> {
     pub fn from_file(file_name: &str, machine_size: usize) -> Result<Self> {
         let path = Path::new(file_name);
+        if !path.is_file() {
+            return Err(Error::new(
+                ErrorKind::InvalidData,
+                "Source code path is a directory.",
+            ));
+        }
         let file = File::open(path)?;
         let reader: BufReader<File> = BufReader::new(file);
         Ok(Self {
@@ -514,7 +506,6 @@ impl<T: BufRead> Interpreter<T> {
                 }
                 Statement::PutChar => {
                     let chr = self.machine.put_char();
-                    dbg!(chr as u8);
                     print!("{}", chr);
                 }
                 Statement::JumpIf(address) => {
