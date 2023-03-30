@@ -63,65 +63,53 @@ pub struct BrainfuckMachine {
     index: usize,
     /// Tape vector.
     tape: Vec<u8>,
-    /// If true, wraps the tape index on overflows/underflows.
-    wrap_tape: bool,
-    /// If true, wraps the cell values on overflows/underflows.
-    wrap_cells: bool,
 }
 
 impl BrainfuckMachine {
     /// Creates a `BrainfuckMachine` instance of given tape size and with
     /// preferred tape/cell value wrapping (tape index and cell values will
     /// overflow/wrap around the lower and upper limits accordingly).
-    pub fn new(size: usize, wrap_tape: bool, wrap_cells: bool) -> Self {
+    pub fn new(size: usize) -> Self {
         let mut result = Self {
             size,
             index: 0,
             tape: Vec::new(),
-            wrap_tape,
-            wrap_cells,
         };
         result.tape.resize(size, 0);
         result
     }
 
-    /// Returns `(first + other) % modulus`. This implementation avoids
-    /// over/underflowing values when performing the inner addition.
-    fn add_with_wrap(first: usize, other: usize, modulus: usize) -> usize {
-        let negated = modulus - first;
-        match negated.cmp(&other) {
-            Ordering::Greater => first + other,
-            _ => other - negated,
-        }
-    }
-
-    /// Returns `(first - other) % modulus`. This implementation avoids
-    /// over/underflowing values when performing the inner substraction.
-    fn sub_with_wrap(first: usize, other: usize, modulus: usize) -> usize {
-        match first.cmp(&other) {
-            Ordering::Less => {
-                let negated = modulus - other;
-                negated + first
-            }
-            _ => first - other,
-        }
-    }
-
     /// Moves the header left by a given amount. If `wrap_tape` is true, wraps the current cell
     /// index when encountering the tape margins.
     pub fn move_left(&mut self, shift: usize) {
-        self.index = match self.wrap_tape {
-            true => Self::sub_with_wrap(self.index, shift, self.size),
-            false => self.index.saturating_sub(shift),
-        };
+        match shift.cmp(&(self.index)) {
+            Ordering::Greater => panic!(
+                "Index out of bounds.
+Index before move: {}.
+Left shift value: {}.
+Max possible index: {}.",
+                self.index,
+                shift,
+                self.size - 1
+            ),
+            _ => self.index -= shift,
+        }
     }
     /// Moves the header right by a given amount. If `wrap_tape` is true, wraps the current cell
     /// index when encountering the tape margins.
     pub fn move_right(&mut self, shift: usize) {
-        self.index = match self.wrap_tape {
-            true => Self::add_with_wrap(self.index, shift, self.size),
-            false => self.index.saturating_add(shift).min(self.size - 1),
-        };
+        match shift.cmp(&(self.size - self.index)) {
+            Ordering::Greater => panic!(
+                "Index out of bounds.
+Index before move: {}.
+Right shift value: {}.
+Max possible index: {}.",
+                self.index,
+                shift,
+                self.size - 1
+            ),
+            _ => self.index += shift,
+        }
     }
 
     /// Adds a given value to the current cell. If `wrap_cells` is true,
@@ -129,10 +117,7 @@ impl BrainfuckMachine {
     /// value shall not exceed the upper bound.
     pub fn add(&mut self, value: u8) {
         let current = self.tape[self.index];
-        self.tape[self.index] = match self.wrap_cells {
-            true => current.wrapping_add(value),
-            false => current.saturating_add(value),
-        };
+        self.tape[self.index] = current.wrapping_add(value);
     }
 
     /// Substracts a given value from the current cell. If `wrap_cells` is
@@ -140,10 +125,7 @@ impl BrainfuckMachine {
     /// the value shall not exceed the lower bound.
     pub fn substract(&mut self, value: u8) {
         let current = self.tape[self.index];
-        self.tape[self.index] = match self.wrap_cells {
-            true => current.wrapping_sub(value),
-            false => current.saturating_sub(value),
-        };
+        self.tape[self.index] = current.wrapping_sub(value);
     }
 
     /// Insert a given char's ASCII value into the current cell.
