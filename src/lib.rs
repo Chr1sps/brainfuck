@@ -2,6 +2,7 @@
 // mod tests;
 
 use std::cmp::Ordering;
+use std::fmt;
 use std::fs::File;
 use std::io::{self, BufRead, BufReader, Error, ErrorKind, Read, Result, Write};
 use std::os::unix::io::AsRawFd;
@@ -155,7 +156,7 @@ struct Lexer<T: BufRead> {
 }
 
 impl<T: BufRead> Lexer<T> {
-    pub fn from_reader(reader: T) -> Self {
+    fn from_reader(reader: T) -> Self {
         Self { reader }
     }
     fn next_token(&mut self) -> Option<Token> {
@@ -296,6 +297,7 @@ impl<T: BufRead> Parser<T> {
                 "Error: '[' found with no matching ']'.".to_string(),
             ))
         } else {
+            dbg!(Code { code: &result });
             Ok(result)
         }
     }
@@ -303,17 +305,11 @@ impl<T: BufRead> Parser<T> {
 
 struct Optimizer {
     statements: Vec<Statement>,
-    wrap_tape: bool,
-    wrap_cells: bool,
 }
 
 impl Optimizer {
     fn new(statements: Vec<Statement>, wrap_tape: bool, wrap_cells: bool) -> Self {
-        Self {
-            statements,
-            wrap_tape,
-            wrap_cells,
-        }
+        Self { statements }
     }
 
     fn get_return_addresses(&mut self) -> Vec<usize> {
@@ -347,9 +343,6 @@ impl Optimizer {
         let mut stmt_count: usize = 0;
         let mut add_count: u8 = 0;
         let mut last_statement = Statement::ReadChar;
-
-        // return_addresses.sort();
-        // return_addresses.dedup();
 
         for (index, statement) in (&mut self.statements).into_iter().enumerate() {
             if !statement.is_equal_type(&last_statement) {
@@ -509,20 +502,19 @@ impl<T: BufRead> Interpreter<T> {
         self.enable_get_char_mode();
         let mut index: usize = 0;
         while (index < statements.len()) {
-            dbg!(&index);
             let statement = statements[index];
-            dbg!(&statement);
             match statement {
                 Statement::MoveLeft(value) => self.machine.move_left(value),
                 Statement::MoveRight(value) => self.machine.move_right(value),
                 Statement::Add(value) => self.machine.add(value),
-                Statement::Substract(value) => self.machine.add(value),
+                Statement::Substract(value) => self.machine.substract(value),
                 Statement::ReadChar => {
                     let chr = self.get_char();
                     self.machine.read_char(chr);
                 }
                 Statement::PutChar => {
                     let chr = self.machine.put_char();
+                    dbg!(chr as u8);
                     print!("{}", chr);
                 }
                 Statement::JumpIf(address) => {
@@ -535,5 +527,28 @@ impl<T: BufRead> Interpreter<T> {
             index += 1;
         }
         self.disable_get_char_mode();
+    }
+}
+
+struct Code<'a> {
+    code: &'a Vec<Statement>,
+}
+
+impl<'a> std::fmt::Debug for Code<'a> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let mut info: String = String::new();
+        for statement in self.code {
+            let to_push = match statement {
+                &Statement::Add(value) => "+".to_string().repeat(value as usize),
+                &Statement::Substract(value) => "-".to_string().repeat(value as usize),
+                &Statement::MoveLeft(value) => "<".to_string().repeat(value),
+                &Statement::MoveRight(value) => ">".to_string().repeat(value),
+                &Statement::ReadChar => ",".to_string(),
+                &Statement::PutChar => ".".to_string(),
+                &Statement::JumpIf(value) => value.to_string(),
+            };
+            info.push_str(&to_push);
+        }
+        f.debug_struct("Code").field("code", &info).finish()
     }
 }
