@@ -1,3 +1,5 @@
+use std::io::Error;
+use std::io::ErrorKind;
 use std::iter::zip;
 
 use crate::Optimizer;
@@ -286,8 +288,10 @@ fn test_parser_parse_loop_invalid_redundant_left_bracket() {
     let mut parser = Parser::from_reader(code.as_bytes());
     let result = parser.parse();
     assert!(result.is_err());
+    let error = result.unwrap_err();
+    assert_eq!(error.kind(), ErrorKind::InvalidData);
     assert_eq!(
-        result.unwrap_err(),
+        error.to_string(),
         "Error: '[' found with no matching ']'.".to_string()
     );
 }
@@ -298,8 +302,10 @@ fn test_parser_parse_loop_invalid_redundant_right_bracket() {
     let mut parser = Parser::from_reader(code.as_bytes());
     let result = parser.parse();
     assert!(result.is_err());
+    let error = result.unwrap_err();
+    assert_eq!(error.kind(), ErrorKind::InvalidData);
     assert_eq!(
-        result.unwrap_err(),
+        error.to_string(),
         "Error: ']' found with no matching '['.".to_string()
     );
 }

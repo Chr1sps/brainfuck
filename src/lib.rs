@@ -2,7 +2,12 @@
 // mod tests;
 
 use std::cmp::Ordering;
-use std::io::BufRead;
+use std::fs::File;
+use std::io::{self, BufRead, BufReader, Error, ErrorKind, Read, Result, Write};
+use std::os::unix::io::AsRawFd;
+use std::path::Path;
+
+use termios::Termios;
 
 #[cfg(test)]
 mod tests;
@@ -66,9 +71,7 @@ pub struct BrainfuckMachine {
 }
 
 impl BrainfuckMachine {
-    /// Creates a `BrainfuckMachine` instance of given tape size and with
-    /// preferred tape/cell value wrapping (tape index and cell values will
-    /// overflow/wrap around the lower and upper limits accordingly).
+    /// Creates a `BrainfuckMachine` instance of given tape size.
     pub fn new(size: usize) -> Self {
         let mut result = Self {
             size,
@@ -79,31 +82,30 @@ impl BrainfuckMachine {
         result
     }
 
-    /// Moves the header left by a given amount. If `wrap_tape` is true, wraps the current cell
-    /// index when encountering the tape margins.
+    /// Moves the header left by a given amount. Panics when the index is out
+    /// of bounds.
     pub fn move_left(&mut self, shift: usize) {
         match shift.cmp(&(self.index)) {
             Ordering::Greater => panic!(
                 "Index out of bounds.
 Index before move: {}.
 Left shift value: {}.
-Max possible index: {}.",
-                self.index,
-                shift,
-                self.size - 1
+",
+                self.index, shift,
             ),
             _ => self.index -= shift,
         }
     }
-    /// Moves the header right by a given amount. If `wrap_tape` is true, wraps the current cell
-    /// index when encountering the tape margins.
+    /// Moves the header right by a given amount. Panics when the index is out
+    /// of bounds.
     pub fn move_right(&mut self, shift: usize) {
         match shift.cmp(&(self.size - self.index)) {
             Ordering::Greater => panic!(
                 "Index out of bounds.
 Index before move: {}.
 Right shift value: {}.
-Max possible index: {}.",
+Max possible index: {}.
+",
                 self.index,
                 shift,
                 self.size - 1
@@ -112,23 +114,19 @@ Max possible index: {}.",
         }
     }
 
-    /// Adds a given value to the current cell. If `wrap_cells` is true,
-    /// upon overflows the value will be wrapped accordingly. Otherwise, the
-    /// value shall not exceed the upper bound.
+    /// Adds a given value to the current cell, with wrapping.
     pub fn add(&mut self, value: u8) {
         let current = self.tape[self.index];
         self.tape[self.index] = current.wrapping_add(value);
     }
 
-    /// Substracts a given value from the current cell. If `wrap_cells` is
-    /// true, upon underflows the value will be wrapped accordingly. Otherwise,
-    /// the value shall not exceed the lower bound.
+    /// Substracts a given value to the current cell, with wrapping.
     pub fn substract(&mut self, value: u8) {
         let current = self.tape[self.index];
         self.tape[self.index] = current.wrapping_sub(value);
     }
 
-    /// Insert a given char's ASCII value into the current cell.
+    /// Inserts a given char's ASCII value into the current cell.
     pub fn read_char(&mut self, input: char) {
         self.tape[self.index] = input as u8
     }
@@ -259,7 +257,7 @@ impl<T: BufRead> Parser<T> {
     fn from_reader(reader: T) -> Self {
         Self::from_lexer(Lexer { reader })
     }
-    fn parse(&mut self) -> Result<Vec<Statement>, String> {
+    fn parse(&mut self) -> Result<Vec<Statement>> {
         let mut result = Vec::new();
         let mut loop_stack: Vec<usize> = Vec::new();
         for opt_token in &mut self.lexer {
@@ -280,7 +278,11 @@ impl<T: BufRead> Parser<T> {
                                 result.push(Statement::JumpIf(address));
                             }
                             None => {
-                                return Err("Error: ']' found with no matching '['.".to_string())
+                                // return Error("Error: ']' found with no matching '['.".to_string())
+                                return Err(Error::new(
+                                    ErrorKind::InvalidData,
+                                    "Error: ']' found with no matching '['.".to_string(),
+                                ));
                             }
                         }
                     }
@@ -289,7 +291,10 @@ impl<T: BufRead> Parser<T> {
             }
         }
         if !loop_stack.is_empty() {
-            Err("Error: '[' found with no matching ']'.".to_string())
+            Err(Error::new(
+                ErrorKind::InvalidData,
+                "Error: '[' found with no matching ']'.".to_string(),
+            ))
         } else {
             Ok(result)
         }
@@ -437,34 +442,76 @@ impl Optimizer {
     }
 }
 
-struct Interpreter<T: BufRead> {
+pub struct Interpreter<T: BufRead> {
     parser: Parser<T>,
     machine: BrainfuckMachine,
+    console: termios::Termios,
+}
+
+impl Interpreter<BufReader<File>> {
+    pub fn from_file(file_name: &str, machine_size: usize) -> Result<Self> {
+        let path = Path::new(file_name);
+        let file = File::open(path)?;
+        let reader: BufReader<File> = BufReader::new(file);
+        Ok(Self {
+            parser: Parser::<BufReader<File>>::from_reader(reader),
+            machine: BrainfuckMachine::new(machine_size),
+            console: termios::Termios::from_fd(0).unwrap(),
+        })
+    }
 }
 
 impl<T: BufRead> Interpreter<T> {
-    fn new(reader: T, machine: BrainfuckMachine) -> Self {
+    pub fn from_reader(reader: T, machine_size: usize) -> Self {
         Self {
             parser: Parser::from_reader(reader),
-            machine,
+            machine: BrainfuckMachine::new(machine_size),
+            console: termios::Termios::from_fd(0).unwrap(),
         }
-    }
-    fn run_code(&mut self) {
-        let code = self
-            .parser
-            .parse()
-            .unwrap_or_else(|msg| panic!("Error when running code: {}.", msg));
     }
 
     fn get_char(&mut self) -> char {
-        // TODO: implement getting a single char
-        todo!();
+        let stdout = io::stdout();
+        let mut buffer = [0; 1];
+        let mut reader = io::stdin();
+        stdout.lock().flush().unwrap();
+        reader.read_exact(&mut buffer).unwrap();
+        buffer[0] as char
+    }
+
+    fn enable_get_char_mode(&mut self) {
+        let mut new_termios = self.console.clone();
+        new_termios.c_lflag &= !(termios::ICANON);
+        termios::tcsetattr(
+            std::io::Stdin::as_raw_fd(&std::io::stdin()),
+            termios::TCSANOW,
+            &mut new_termios,
+        )
+        .unwrap();
+    }
+
+    fn disable_get_char_mode(&mut self) {
+        termios::tcsetattr(
+            std::io::Stdin::as_raw_fd(&std::io::stdin()),
+            termios::TCSANOW,
+            &self.console,
+        )
+        .unwrap();
+    }
+
+    pub fn parse_and_run(&mut self) -> Result<()> {
+        let mut statements = self.parser.parse()?;
+        self.run(statements);
+        Ok(())
     }
 
     fn run(&mut self, statements: Vec<Statement>) {
+        self.enable_get_char_mode();
         let mut index: usize = 0;
-        loop {
+        while (index < statements.len()) {
+            dbg!(&index);
             let statement = statements[index];
+            dbg!(&statement);
             match statement {
                 Statement::MoveLeft(value) => self.machine.move_left(value),
                 Statement::MoveRight(value) => self.machine.move_right(value),
@@ -479,7 +526,7 @@ impl<T: BufRead> Interpreter<T> {
                     print!("{}", chr);
                 }
                 Statement::JumpIf(address) => {
-                    if !self.machine.check_loop() {
+                    if self.machine.check_loop() {
                         index = address;
                         continue;
                     }
@@ -487,5 +534,6 @@ impl<T: BufRead> Interpreter<T> {
             }
             index += 1;
         }
+        self.disable_get_char_mode();
     }
 }

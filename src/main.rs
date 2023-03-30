@@ -1,10 +1,7 @@
-use std::fs::File;
-use std::io::{Read, Write};
-use std::path::Path;
-use std::{env, io};
+use std::io::{Error, ErrorKind, Result};
 extern crate termios;
-use std::os::unix::io::RawFd;
-use termios::{tcsetattr, Termios, ICANON, TCSANOW};
+use brainfuck::Interpreter;
+use clap::Parser as ClapParser;
 
 // pub mod brainfuck;
 // use crate::brainfuck::BrainfuckMachine;
@@ -46,40 +43,31 @@ use termios::{tcsetattr, Termios, ICANON, TCSANOW};
 // name := $ dowolna pasująca nazwa $
 // value := $ dowolna pasująca wartość $
 
-fn main() {
-    // let machine: BrainfuckMachine = BrainfuckMachine::new(1000, true);
-    let args: Vec<String> = env::args().collect();
-    // dbg!(&args);
-    if args.len() == 2 {
-        let filename = &args[1];
-        let path = Path::new(filename);
-        let display = path.display();
-        let mut file = match File::open(&path) {
-            Ok(file) => file,
-            Err(why) => panic!("Couldn't open {}: {}", display, why),
-        };
-        let mut data = String::new();
-        if let Err(why) = file.read_to_string(&mut data) {
-            panic!("Couldn't open {}: {}", display, why)
-        };
-        println!("Data: {}", data);
+#[derive(ClapParser)]
+#[command(name = "Brainfuck interpreter")]
+#[command(author = "Chr1sps")]
+#[command(version = "1.0")]
+#[command(about = "Brainfuck interpreter for unix based systems.", long_about = None)]
+struct Cli {
+    /// Number of cells that the tape has.
+    #[arg(short, long, value_name = "SIZE")]
+    size: Option<usize>,
+
+    /// Name of the file to open.
+    file: Option<String>,
+}
+
+fn main() -> Result<()> {
+    let args = Cli::parse();
+    match &args.file {
+        Some(file_name) => {
+            let size = args.size.unwrap_or(30000);
+            let mut interpreter = Interpreter::from_file(&file_name, size)?;
+            interpreter.parse_and_run()
+        }
+        None => Err(Error::new(
+            ErrorKind::NotFound,
+            "No file has been specified",
+        )),
     }
-    dbg!(&args);
-    println!("{}", env::consts::OS);
-
-    // this sets the console to only read a single char at once
-    let termios = Termios::from_fd(0).unwrap();
-    let mut new_termios = termios.clone();
-    new_termios.c_lflag &= !(ICANON);
-    tcsetattr(0, TCSANOW, &mut new_termios).unwrap();
-
-    let stdout = io::stdout();
-    let mut buffer = [0; 1];
-    let mut reader = io::stdin();
-    stdout.lock().flush().unwrap();
-    reader.read_exact(&mut buffer).unwrap();
-    println!("{:?}", buffer[0] as char);
-
-    // this resets the console back to its normal state
-    tcsetattr(0, TCSANOW, &termios).unwrap();
 }
