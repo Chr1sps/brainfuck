@@ -397,20 +397,23 @@ impl Optimizer {
         self.statements = result;
     }
 
-    fn optimize(&mut self, max_iterations: Option<u32>) {
-        let mut iter = 0;
-        loop {
-            if let Some(iterations) = max_iterations {
-                if iter == iterations {
+    fn optimize(&mut self, max_iterations: u32) {
+        if max_iterations == 0 {
+            loop {
+                let previous = self.statements.clone();
+                self.optimize_once();
+                if self.statements == previous {
                     break;
                 }
             }
-            let previous = self.statements.clone();
-            self.optimize_once();
-            if self.statements == previous {
-                break;
+        } else {
+            for _ in 0..max_iterations {
+                let previous = self.statements.clone();
+                self.optimize_once();
+                if self.statements == previous {
+                    break;
+                }
             }
-            iter += 1;
         }
     }
 
@@ -488,7 +491,7 @@ impl<T: BufRead> Interpreter<T> {
         Ok(())
     }
 
-    pub fn run_with_optimization(&mut self, max_iterations: Option<u32>) -> Result<()> {
+    pub fn run_with_optimization(&mut self, max_iterations: u32) -> Result<()> {
         let statements = self.parser.parse()?;
         let mut optimizer = Optimizer::new(statements);
         optimizer.optimize(max_iterations);

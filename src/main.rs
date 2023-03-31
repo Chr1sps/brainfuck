@@ -15,23 +15,23 @@ struct Cli {
     /// Name of the file to open.
     file: Option<String>,
 
-    #[arg(default_value_t = 0, short, long, value_name = "COUNT")]
+    #[arg(short, long, value_name = "COUNT")]
     /// How many iterations of optimizing to run on the parsed code. Entering
-    /// negative values means that the optimizer will run until the code is
-    /// fully optimized.
-    optimize: isize,
+    /// zero means that the optimizer will run until the code is fully
+    /// optimized.
+    optimize: Option<u32>,
 
     #[arg(default_value_t = false, long)]
-    /// Outputs the machine binary data. Exclusive with "--hex".
+    /// Outputs the machine binary data. Exclusive with "--hex". TODO
     binary: bool,
 
     #[arg(default_value_t = false, long)]
-    /// Outputs the machine hex data. Exclusive with "--binary".
+    /// Outputs the machine hex data. Exclusive with "--binary". TODO
     hex: bool,
 
     #[arg(long, value_name = "FILE")]
     /// Outputs the machine data to a given FILE. Use "--hex" and "--binary" to
-    /// switch from ASCII encoding to other formats.
+    /// switch from ASCII encoding to other formats. TODO
     output: Option<String>,
 }
 
@@ -41,7 +41,11 @@ fn main() -> Result<()> {
         Some(file_name) => {
             let size = args.size.unwrap_or(30000);
             let mut interpreter = Interpreter::from_file(&file_name, size)?;
-            interpreter.run()?;
+            if let Some(value) = args.optimize {
+                interpreter.run_with_optimization(value)?;
+            } else {
+                interpreter.run()?;
+            }
             Ok(())
         }
         None => Err(Error::new(
