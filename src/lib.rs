@@ -139,9 +139,6 @@ struct Lexer<T: BufRead> {
 }
 
 impl<T: BufRead> Lexer<T> {
-    fn from_reader(reader: T) -> Self {
-        Self { reader }
-    }
     fn next_token(&mut self) -> Option<Token> {
         let mut buf: [u8; 1] = [0];
         match self.reader.read(&mut buf) {
@@ -323,6 +320,7 @@ impl Optimizer {
         let mut result: Vec<Statement> = Vec::new();
         let mut stmt_count: usize = 0;
         let mut last_statement = Statement::ReadChar;
+        let return_addresses = self.get_return_addresses();
 
         for statement in (&mut self.statements).into_iter() {
             if !statement.is_equal_type(&last_statement)
