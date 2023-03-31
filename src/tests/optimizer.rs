@@ -113,7 +113,13 @@ fn test_optimize_once_adds_with_loop() {
         Statement::Add(3),
         Statement::Add(4),
         Statement::JumpIf(2),
+        Statement::JumpIf(0),
     ];
-    let output = vec![Statement::Add(7), Statement::Add(7), Statement::JumpIf(1)];
+    let output = vec![
+        Statement::Add(7),
+        Statement::Add(7),
+        Statement::JumpIf(1),
+        Statement::JumpIf(0),
+    ];
     test_optimize_once(&input, &output);
 }

@@ -45,6 +45,7 @@ impl Statement {
         matches!(self, &(Statement::MoveLeft(_) | Statement::MoveRight(_)))
     }
 }
+
 pub struct BrainfuckMachine {
     /// Size of the tape vector.
     size: usize,
@@ -321,15 +322,23 @@ impl Optimizer {
         let mut stmt_count: usize = 0;
         let mut last_statement = Statement::ReadChar;
         let return_addresses = self.get_return_addresses();
+        let mut new_return_addresses: Vec<usize> = Vec::new();
 
-        for statement in (&mut self.statements).into_iter() {
+        for (index, statement) in (&mut self.statements).into_iter().enumerate() {
             if !statement.is_equal_type(&last_statement)
-                && (statement.is_move() != last_statement.is_move())
+                && (!statement.is_move() || !last_statement.is_move())
             {
                 match Self::generate_optimized_stmt(last_statement, &mut stmt_count) {
                     Some(statement) => result.push(statement),
                     None => {}
                 }
+            }
+            if return_addresses.contains(&index) {
+                match Self::generate_optimized_stmt(last_statement, &mut stmt_count) {
+                    Some(statement) => result.push(statement),
+                    None => {}
+                }
+                new_return_addresses.push(result.len());
             }
             let mut cloned = statement.clone();
             match statement {
@@ -374,7 +383,9 @@ impl Optimizer {
                     }
                 },
                 stmt @ (Statement::PutChar | Statement::ReadChar) => result.push(*stmt),
-                Statement::JumpIf(addr) => result.push(Statement::JumpIf(*addr)),
+                Statement::JumpIf(_) => {
+                    result.push(Statement::JumpIf(new_return_addresses.pop().unwrap()))
+                }
             }
             last_statement = cloned;
         }
