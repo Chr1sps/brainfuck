@@ -1,11 +1,11 @@
-use std::io::{Error, ErrorKind, Result};
+use std::io::{Error, ErrorKind};
 use std::iter::zip;
 
-use crate::Optimizer;
 use crate::Statement;
 use crate::Token;
+use utils::*;
 
-use super::{BrainfuckMachine, Lexer, Parser};
+use super::{BrainfuckMachine, Lexer};
 #[test]
 fn test_machine_index_change_base() {
     let mut machine = BrainfuckMachine::new(10);
@@ -170,22 +170,13 @@ fn test_lexer_iter_valid_tokens() {
 #[test]
 fn test_lexer_iter_other_symbols() {
     let code = String::from("abcdef");
-    let lexer = Lexer::from_reader(code.as_bytes());
     let expected: Vec<Option<Token>> = vec![None, None, None, None, None, None];
-    let mut actual: Vec<Option<Token>> = Vec::new();
-    for token in lexer.iter() {
-        actual.push(token);
-    }
-    assert_eq!(expected.len(), actual.len());
-    for (exp, act) in zip(expected, actual) {
-        assert_eq!(exp, act);
-    }
+    test_lexer(&code, &expected);
 }
 
 #[test]
 fn test_lexer_for_loop() {
     let code = String::from("><,.+-[]");
-    let lexer = Lexer::from_reader(code.as_bytes());
     let expected: Vec<Option<Token>> = vec![
         Some(Token::ShiftRight),
         Some(Token::ShiftLeft),
@@ -196,14 +187,7 @@ fn test_lexer_for_loop() {
         Some(Token::StartLoop),
         Some(Token::EndLoop),
     ];
-    let mut actual: Vec<Option<Token>> = Vec::new();
-    for token in lexer {
-        actual.push(token);
-    }
-    assert_eq!(expected.len(), actual.len());
-    for (exp, act) in zip(expected, actual) {
-        assert_eq!(exp, act);
-    }
+    test_lexer(&code, &expected);
 }
 
 #[test]
@@ -312,7 +296,7 @@ fn test_optimizer_optimize_once_no_optimization() {
 }
 
 #[test]
-fn test_optimizer_optimize_once_optimize_adds() {
+fn test_optimizer_optimize_once_adds() {
     let input: Vec<Statement> = vec![
         Statement::Add(1),
         Statement::Add(2),
@@ -324,7 +308,7 @@ fn test_optimizer_optimize_once_optimize_adds() {
 }
 
 #[test]
-fn test_optimizer_optimize_once_optimize_adds_overflow() {
+fn test_optimizer_optimize_once_adds_overflow() {
     let input: Vec<Statement> = vec![
         Statement::Add(3),
         Statement::Add(254),
@@ -336,7 +320,19 @@ fn test_optimizer_optimize_once_optimize_adds_overflow() {
 }
 
 #[test]
-fn test_optimizer_optimize_once_optimize_moves_right() {
+fn test_optimizer_optimize_once_adds_no_add() {
+    let input: Vec<Statement> = vec![
+        Statement::Add(3),
+        Statement::Add(255),
+        Statement::Add(4),
+        Statement::Add(250),
+    ];
+    let output: Vec<Statement> = Vec::new();
+    test_optimize_once(&input, &output);
+}
+
+#[test]
+fn test_optimizer_optimize_once_moves_right() {
     let input: Vec<Statement> = vec![
         Statement::MoveRight(3),
         Statement::MoveRight(4),
@@ -346,22 +342,91 @@ fn test_optimizer_optimize_once_optimize_moves_right() {
     let output = vec![Statement::MoveRight(18)];
     test_optimize_once(&input, &output);
 }
-fn test_parser(code: &String, expected: &Vec<Statement>) {
-    let mut parser = Parser::from_reader(code.as_bytes());
-    let parsed = parser.parse().unwrap();
-    assert_eq!(parsed, *expected);
+
+#[test]
+fn test_optimizer_optimize_once_moves_left_and_right() {
+    let input: Vec<Statement> = vec![
+        Statement::MoveLeft(3),
+        Statement::MoveLeft(4),
+        Statement::MoveRight(5),
+        Statement::MoveRight(6),
+    ];
+    let output = vec![Statement::MoveRight(4)];
+    test_optimize_once(&input, &output);
 }
 
-fn test_parser_error(code: &String, error: &Error) {
-    let mut parser = Parser::from_reader(code.as_bytes());
-    let parsed = parser.parse().unwrap_err();
-    assert_eq!(parsed.kind(), error.kind());
-    assert_eq!(parsed.to_string(), error.to_string(),);
+#[test]
+fn test_optimizer_optimize_once_moves_left_and_right_no_shift() {
+    let input: Vec<Statement> = vec![
+        Statement::MoveRight(3),
+        Statement::MoveLeft(4),
+        Statement::MoveLeft(5),
+        Statement::MoveRight(6),
+    ];
+    let output: Vec<Statement> = Vec::new();
+    test_optimize_once(&input, &output);
 }
 
-fn test_optimize_once(input: &Vec<Statement>, output: &Vec<Statement>) {
-    let mut optimizer = Optimizer::new(input.clone());
-    optimizer.optimize_once();
-    let optimized = optimizer.yield_back();
-    assert_eq!(*optimized, *output);
+#[test]
+fn test_optimizer_optimize_once_adds_and_moves() {
+    let input: Vec<Statement> = vec![
+        Statement::MoveRight(3),
+        Statement::MoveLeft(4),
+        Statement::Add(3),
+        Statement::Add(4),
+        Statement::MoveLeft(5),
+        Statement::MoveRight(6),
+    ];
+    let output = vec![
+        Statement::MoveLeft(1),
+        Statement::Add(7),
+        Statement::MoveRight(1),
+    ];
+    test_optimize_once(&input, &output);
+}
+
+#[test]
+fn test_optimizer_optimize_once_adds_with_loop() {
+    let input: Vec<Statement> = vec![
+        Statement::Add(3),
+        Statement::Add(4),
+        Statement::Add(3),
+        Statement::Add(4),
+        Statement::JumpIf(2),
+    ];
+    let output = vec![Statement::Add(7), Statement::Add(7), Statement::JumpIf(1)];
+    test_optimize_once(&input, &output);
+}
+
+// helper testing functions
+mod utils {
+    use crate::{Lexer, Optimizer, Parser, Statement, Token};
+    use std::io::Error;
+    pub(in crate::tests) fn test_lexer(code: &String, expected: &Vec<Option<Token>>) {
+        let lexer = Lexer::from_reader(code.as_bytes());
+        let mut actual: Vec<Option<Token>> = Vec::new();
+        for token in lexer {
+            actual.push(token);
+        }
+        assert_eq!(*expected, actual);
+    }
+    pub(in crate::tests) fn test_parser(code: &String, expected: &Vec<Statement>) {
+        let mut parser = Parser::from_reader(code.as_bytes());
+        let parsed = parser.parse().unwrap();
+        assert_eq!(parsed, *expected);
+    }
+
+    pub fn test_parser_error(code: &String, error: &Error) {
+        let mut parser = Parser::from_reader(code.as_bytes());
+        let parsed = parser.parse().unwrap_err();
+        assert_eq!(parsed.kind(), error.kind());
+        assert_eq!(parsed.to_string(), error.to_string(),);
+    }
+
+    pub(in crate::tests) fn test_optimize_once(input: &Vec<Statement>, output: &Vec<Statement>) {
+        let mut optimizer = Optimizer::new(input.clone());
+        optimizer.optimize_once();
+        let optimized = optimizer.yield_back();
+        assert_eq!(*optimized, *output);
+    }
 }

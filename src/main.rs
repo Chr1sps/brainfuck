@@ -41,7 +41,7 @@ fn main() -> Result<()> {
         Some(file_name) => {
             let size = args.size.unwrap_or(30000);
             let mut interpreter = Interpreter::from_file(&file_name, size)?;
-            interpreter.parse_and_run()
+            interpreter.run()
         }
         None => Err(Error::new(
             ErrorKind::NotFound,

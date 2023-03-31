@@ -41,7 +41,7 @@ impl Statement {
     fn is_equal_type(&self, other: &Self) -> bool {
         std::mem::discriminant(self) == std::mem::discriminant(other)
     }
-    fn moves_header(&self) -> bool {
+    fn is_move(&self) -> bool {
         matches!(self, &(Statement::MoveLeft(_) | Statement::MoveRight(_)))
     }
 }
@@ -325,7 +325,9 @@ impl Optimizer {
         let mut last_statement = Statement::ReadChar;
 
         for statement in (&mut self.statements).into_iter() {
-            if !statement.is_equal_type(&last_statement) {
+            if !statement.is_equal_type(&last_statement)
+                && (statement.is_move() != last_statement.is_move())
+            {
                 match Self::generate_optimized_stmt(last_statement, &mut stmt_count) {
                     Some(statement) => result.push(statement),
                     None => {}
@@ -383,66 +385,24 @@ impl Optimizer {
             Some(statement) => result.push(statement),
             None => {}
         }
-        // fn parse(&mut self) -> Result<Vec<Statement>, String> {
-        //     let mut result = Vec::new();
-        //     let mut token_count: usize = 0;
-        //     let mut last_token = Token::ShiftLeft;
-        //     let mut loop_stack: Vec<usize> = Vec::new();
-
-        //     for opt_token in &mut self.lexer {
-        //         match opt_token {
-        //             Some(token) => {
-        //                 if token != last_token {
-        //                     if token_count != 0 {
-        //                         // case when countable last_token
-        //                         let stmt_to_push =
-        //                             Self::generate_optimized_stmt(last_token, token_count);
-        //                         result.push(stmt_to_push);
-        //                     }
-        //                     token_count = 0;
-        //                 }
-        //                 match token {
-        //                     Token::StartLoop => {
-        //                         loop_stack.push(result.len());
-        //                     }
-        //                     Token::EndLoop => {
-        //                         let address_opt = loop_stack.pop();
-        //                         match address_opt {
-        //                             Some(address) if address == result.len() => {}
-        //                             Some(address) => {
-        //                                 result.push(Statement::JumpIf(address));
-        //                             }
-        //                             None => {
-        //                                 return Err("Error: ']' found with no matching '['.".to_string())
-        //                             }
-        //                         }
-        //                     }
-        //                     Token::PutChar => {
-        //                         result.push(Statement::PutChar);
-        //                     }
-        //                     Token::ReadChar => {
-        //                         result.push(Statement::ReadChar);
-        //                     }
-        //                     _ => {
-        //                         token_count += 1;
-        //                     }
-        //                 }
-        //                 last_token = token;
-        //             }
-        //             None => {}
-        //         }
-        //     }
-        //     if !loop_stack.is_empty() {
-        //         Err("Error: '[' found with no matching ']'.".to_string())
-        //     } else {
-        //         if token_count != 0 {
-        //             let stmt_to_push = Self::generate_optimized_stmt(last_token, token_count);
-        //             result.push(stmt_to_push);
-        //         }
-        //         Ok(result)
-        //     }
-        // }
         self.statements = result;
+    }
+
+    fn optimize(&mut self, max_iterations: Option<u32>) {
+        let mut iter = 0;
+        loop {
+            if let Some(iterations) = max_iterations {
+                if iter == iterations {
+                    break;
+                }
+            }
+            let previous = self.statements.clone();
+            self.optimize_once();
+            if self.statements == previous {
+                break;
+            }
+            iter += 1;
+        }
     }
 
     fn yield_back(self) -> Vec<Statement> {
@@ -513,13 +473,22 @@ impl<T: BufRead> Interpreter<T> {
         .unwrap();
     }
 
-    pub fn parse_and_run(&mut self) -> Result<()> {
+    pub fn run(&mut self) -> Result<()> {
         let statements = self.parser.parse()?;
-        self.run(statements);
+        self.run_code(statements);
         Ok(())
     }
 
-    fn run(&mut self, statements: Vec<Statement>) {
+    pub fn run_with_optimization(&mut self, max_iterations: Option<u32>) -> Result<()> {
+        let statements = self.parser.parse()?;
+        let mut optimizer = Optimizer::new(statements);
+        optimizer.optimize(max_iterations);
+        let statements = optimizer.yield_back();
+        self.run_code(statements);
+        Ok(())
+    }
+
+    fn run_code(&mut self, statements: Vec<Statement>) {
         self.enable_get_char_mode();
         let mut index: usize = 0;
         while index < statements.len() {
