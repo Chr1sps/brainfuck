@@ -1,5 +1,4 @@
-use std::io::Error;
-use std::io::ErrorKind;
+use std::io::{Error, ErrorKind, Result};
 use std::iter::zip;
 
 use crate::Optimizer;
@@ -210,45 +209,36 @@ fn test_lexer_for_loop() {
 #[test]
 fn test_parser_parse_empty_string() {
     let code = String::from("");
-    let mut parser = Parser::from_reader(code.as_bytes());
-    let result = parser.parse();
-    assert!(result.is_ok());
-    assert_eq!(result.unwrap().len(), 0);
+    let expected: Vec<Statement> = Vec::new();
+    test_parser(&code, &expected);
 }
 
 #[test]
 fn test_parser_parse_non_loop_statements() {
     let code = String::from("+-><,.");
-    let mut parser = Parser::from_reader(code.as_bytes());
-    let result = parser.parse();
     let expected = vec![
         Statement::Add(1),
-        Statement::Substract(1),
+        Statement::Add(255),
         Statement::MoveRight(1),
         Statement::MoveLeft(1),
         Statement::ReadChar,
         Statement::PutChar,
     ];
-    assert!(result.is_ok());
-    let unwrapped = result.unwrap();
-    assert_eq!(unwrapped.len(), expected.len());
-    assert_eq!(unwrapped, expected);
+    test_parser(&code, &expected);
 }
 
 #[test]
 fn test_parser_parse_countable_optimization() {
     let code = String::from("++++----<<<<>>>>");
-    let mut parser = Parser::from_reader(code.as_bytes());
-    let result = parser.parse();
     let expected = vec![
         Statement::Add(1),
         Statement::Add(1),
         Statement::Add(1),
         Statement::Add(1),
-        Statement::Substract(1),
-        Statement::Substract(1),
-        Statement::Substract(1),
-        Statement::Substract(1),
+        Statement::Add(255),
+        Statement::Add(255),
+        Statement::Add(255),
+        Statement::Add(255),
         Statement::MoveLeft(1),
         Statement::MoveLeft(1),
         Statement::MoveLeft(1),
@@ -258,74 +248,54 @@ fn test_parser_parse_countable_optimization() {
         Statement::MoveRight(1),
         Statement::MoveRight(1),
     ];
-    assert!(result.is_ok());
-    let unwrapped = result.unwrap();
-    assert_eq!(unwrapped.len(), expected.len());
-    assert_eq!(unwrapped, expected);
+    test_parser(&code, &expected);
 }
 
 #[test]
 fn test_parser_parse_loop_valid() {
     let code = String::from("[+-<>]");
-    let mut parser = Parser::from_reader(code.as_bytes());
-    let result = parser.parse();
     let expected = vec![
         Statement::Add(1),
-        Statement::Substract(1),
+        Statement::Add(255),
         Statement::MoveLeft(1),
         Statement::MoveRight(1),
         Statement::JumpIf(0),
     ];
-    assert!(result.is_ok());
-    let unwrapped = result.unwrap();
-    assert_eq!(unwrapped.len(), expected.len());
-    assert_eq!(unwrapped, expected);
+    test_parser(&code, &expected);
 }
 
 #[test]
 fn test_parser_parse_loop_invalid_redundant_left_bracket() {
     let code = String::from("[[++++----<<<<>>>>]");
-    let mut parser = Parser::from_reader(code.as_bytes());
-    let result = parser.parse();
-    assert!(result.is_err());
-    let error = result.unwrap_err();
-    assert_eq!(error.kind(), ErrorKind::InvalidData);
-    assert_eq!(
-        error.to_string(),
-        "Error: '[' found with no matching ']'.".to_string()
+    let error = Error::new(
+        ErrorKind::InvalidData,
+        "Error: '[' found with no matching ']'.".to_string(),
     );
+    test_parser_error(&code, &error);
 }
 
 #[test]
 fn test_parser_parse_loop_invalid_redundant_right_bracket() {
     let code = String::from("[++++----]<<<<>>>>]");
-    let mut parser = Parser::from_reader(code.as_bytes());
-    let result = parser.parse();
-    assert!(result.is_err());
-    let error = result.unwrap_err();
-    assert_eq!(error.kind(), ErrorKind::InvalidData);
-    assert_eq!(
-        error.to_string(),
-        "Error: ']' found with no matching '['.".to_string()
+    let error = Error::new(
+        ErrorKind::InvalidData,
+        "Error: ']' found with no matching '['.".to_string(),
     );
+    test_parser_error(&code, &error);
 }
 
 #[test]
 fn test_parser_parse_loop_optimize_remove_empty_loops() {
     let code = String::from("[][][]");
-    let mut parser = Parser::from_reader(code.as_bytes());
-    let result = parser.parse();
-    assert!(result.is_ok());
-    assert!(result.unwrap().is_empty());
+    let result: Vec<Statement> = Vec::new();
+    test_parser(&code, &result);
 }
 
 #[test]
 fn test_parser_parse_loop_optimize_remove_empty_loops_nested() {
     let code = String::from("[[[]]]");
-    let mut parser = Parser::from_reader(code.as_bytes());
-    let result = parser.parse();
-    assert!(result.is_ok());
-    assert!(result.unwrap().is_empty());
+    let result: Vec<Statement> = Vec::new();
+    test_parser(&code, &result);
 }
 
 #[test]
@@ -336,65 +306,62 @@ fn test_optimizer_optimize_once_no_optimization() {
         Statement::MoveRight(1),
         Statement::Add(1),
         Statement::MoveLeft(1),
-        Statement::Substract(1),
         Statement::JumpIf(0),
     ];
-    let mut optimizer = Optimizer::new(statements.clone(), false, false);
-    optimizer.optimize_once();
-    let optimized = optimizer.yield_back();
-    assert_eq!(statements, optimized);
+    test_optimize_once(&statements, &statements);
 }
 
 #[test]
 fn test_optimizer_optimize_once_optimize_adds() {
-    let statements: Vec<Statement> = vec![
+    let input: Vec<Statement> = vec![
         Statement::Add(1),
         Statement::Add(2),
         Statement::Add(3),
         Statement::Add(4),
     ];
-    let mut optimizer = Optimizer::new(statements.clone(), false, false);
-    optimizer.optimize_once();
-    let optimized = optimizer.yield_back();
-    assert_ne!(statements, optimized);
-    assert_eq!(optimized.len(), 1);
-    let final_statement = optimized[0];
-    assert_eq!(final_statement, Statement::Add(10));
+    let output = vec![Statement::Add(10)];
+    test_optimize_once(&input, &output);
 }
 
 #[test]
-fn test_optimizer_optimize_once_optimize_adds_and_subs() {
-    let statements: Vec<Statement> = vec![
+fn test_optimizer_optimize_once_optimize_adds_overflow() {
+    let input: Vec<Statement> = vec![
         Statement::Add(3),
-        Statement::Substract(2),
+        Statement::Add(254),
         Statement::Add(4),
-        Statement::Substract(1),
-        Statement::Add(1),
-        Statement::Substract(1),
-        Statement::Add(1),
+        Statement::Add(250),
     ];
-    let mut optimizer = Optimizer::new(statements.clone(), false, false);
-    optimizer.optimize_once();
-    let optimized = optimizer.yield_back();
-    assert_ne!(statements, optimized);
-    assert_eq!(optimized.len(), 1);
-    let final_statement = optimized[0];
-    assert_eq!(final_statement, Statement::Add(5));
+    let output = vec![Statement::Add(255)];
+    test_optimize_once(&input, &output);
 }
 
 #[test]
-fn test_optimizer_optimize_once_optimize_adds_and_subs_underflow() {
-    let statements: Vec<Statement> = vec![
-        Statement::Add(3),
-        Statement::Substract(2),
-        Statement::Add(4),
-        Statement::Substract(6),
+fn test_optimizer_optimize_once_optimize_moves_right() {
+    let input: Vec<Statement> = vec![
+        Statement::MoveRight(3),
+        Statement::MoveRight(4),
+        Statement::MoveRight(5),
+        Statement::MoveRight(6),
     ];
-    let mut optimizer = Optimizer::new(statements.clone(), false, false);
+    let output = vec![Statement::MoveRight(18)];
+    test_optimize_once(&input, &output);
+}
+fn test_parser(code: &String, expected: &Vec<Statement>) {
+    let mut parser = Parser::from_reader(code.as_bytes());
+    let parsed = parser.parse().unwrap();
+    assert_eq!(parsed, *expected);
+}
+
+fn test_parser_error(code: &String, error: &Error) {
+    let mut parser = Parser::from_reader(code.as_bytes());
+    let parsed = parser.parse().unwrap_err();
+    assert_eq!(parsed.kind(), error.kind());
+    assert_eq!(parsed.to_string(), error.to_string(),);
+}
+
+fn test_optimize_once(input: &Vec<Statement>, output: &Vec<Statement>) {
+    let mut optimizer = Optimizer::new(input.clone());
     optimizer.optimize_once();
     let optimized = optimizer.yield_back();
-    assert_ne!(statements, optimized);
-    assert_eq!(optimized.len(), 1);
-    let final_statement = optimized[0];
-    assert_eq!(final_statement, Statement::Substract(1));
+    assert_eq!(*optimized, *output);
 }

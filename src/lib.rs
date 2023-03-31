@@ -31,7 +31,6 @@ enum Statement {
     MoveRight(usize),
 
     Add(u8),
-    Substract(u8),
 
     JumpIf(usize),
     PutChar,
@@ -41,9 +40,6 @@ enum Statement {
 impl Statement {
     fn is_equal_type(&self, other: &Self) -> bool {
         std::mem::discriminant(self) == std::mem::discriminant(other)
-    }
-    fn changes_value(&self) -> bool {
-        matches!(self, &(Statement::Add(_) | Statement::Substract(_)))
     }
     fn moves_header(&self) -> bool {
         matches!(self, &(Statement::MoveLeft(_) | Statement::MoveRight(_)))
@@ -252,7 +248,7 @@ impl<T: BufRead> Parser<T> {
             match opt_token {
                 Some(token) => match token {
                     Token::Increment => result.push(Statement::Add(1)),
-                    Token::Decrement => result.push(Statement::Substract(1)),
+                    Token::Decrement => result.push(Statement::Add(u8::MAX)),
                     Token::ShiftLeft => result.push(Statement::MoveLeft(1)),
                     Token::ShiftRight => result.push(Statement::MoveRight(1)),
                     Token::PutChar => result.push(Statement::PutChar),
@@ -294,7 +290,7 @@ struct Optimizer {
 }
 
 impl Optimizer {
-    fn new(statements: Vec<Statement>, wrap_tape: bool, wrap_cells: bool) -> Self {
+    fn new(statements: Vec<Statement>) -> Self {
         Self { statements }
     }
 
@@ -314,7 +310,6 @@ impl Optimizer {
             0 => None,
             _ => match stmt_type {
                 Statement::Add(_) => Some(Statement::Add(*value as u8)),
-                Statement::Substract(_) => Some(Statement::Substract(*value as u8)),
                 Statement::MoveLeft(_) => Some(Statement::MoveLeft(*value)),
                 Statement::MoveRight(_) => Some(Statement::MoveRight(*value)),
                 _ => None,
@@ -327,27 +322,61 @@ impl Optimizer {
     fn optimize_once(&mut self) {
         let mut result: Vec<Statement> = Vec::new();
         let mut stmt_count: usize = 0;
-        let mut add_count: u8 = 0;
         let mut last_statement = Statement::ReadChar;
 
-        for (index, statement) in (&mut self.statements).into_iter().enumerate() {
+        for statement in (&mut self.statements).into_iter() {
             if !statement.is_equal_type(&last_statement) {
                 match Self::generate_optimized_stmt(last_statement, &mut stmt_count) {
                     Some(statement) => result.push(statement),
                     None => {}
                 }
             }
-            last_statement = *statement;
+            let mut cloned = statement.clone();
             match statement {
-                Statement::MoveLeft(value) => result.push(Statement::MoveLeft(*value)),
-                Statement::MoveRight(value) => result.push(Statement::MoveRight(*value)),
-                Statement::Add(value) => {
-                    stmt_count += *value as usize;
-                }
-                Statement::Substract(value) => result.push(Statement::Substract(*value)),
+                Statement::MoveLeft(value) => match last_statement {
+                    Statement::MoveLeft(_) => {
+                        stmt_count += *value;
+                    }
+                    Statement::MoveRight(_) => {
+                        if stmt_count < *value {
+                            stmt_count = *value - stmt_count;
+                        } else {
+                            stmt_count -= *value;
+                            cloned = last_statement.clone();
+                        }
+                    }
+                    _ => {
+                        stmt_count = *value;
+                    }
+                },
+                Statement::MoveRight(value) => match last_statement {
+                    Statement::MoveRight(_) => {
+                        stmt_count += *value;
+                    }
+                    Statement::MoveLeft(_) => {
+                        if stmt_count < *value {
+                            stmt_count = *value - stmt_count;
+                        } else {
+                            stmt_count -= *value;
+                            cloned = last_statement.clone();
+                        }
+                    }
+                    _ => {
+                        stmt_count = *value;
+                    }
+                },
+                Statement::Add(value) => match last_statement {
+                    Statement::Add(_) => {
+                        stmt_count = value.wrapping_add(stmt_count as u8) as usize;
+                    }
+                    _ => {
+                        stmt_count = *value as usize;
+                    }
+                },
                 stmt @ (Statement::PutChar | Statement::ReadChar) => result.push(*stmt),
                 Statement::JumpIf(addr) => result.push(Statement::JumpIf(*addr)),
             }
+            last_statement = cloned;
         }
 
         match Self::generate_optimized_stmt(last_statement, &mut stmt_count) {
@@ -485,7 +514,7 @@ impl<T: BufRead> Interpreter<T> {
     }
 
     pub fn parse_and_run(&mut self) -> Result<()> {
-        let mut statements = self.parser.parse()?;
+        let statements = self.parser.parse()?;
         self.run(statements);
         Ok(())
     }
@@ -493,13 +522,12 @@ impl<T: BufRead> Interpreter<T> {
     fn run(&mut self, statements: Vec<Statement>) {
         self.enable_get_char_mode();
         let mut index: usize = 0;
-        while (index < statements.len()) {
+        while index < statements.len() {
             let statement = statements[index];
             match statement {
                 Statement::MoveLeft(value) => self.machine.move_left(value),
                 Statement::MoveRight(value) => self.machine.move_right(value),
                 Statement::Add(value) => self.machine.add(value),
-                Statement::Substract(value) => self.machine.substract(value),
                 Statement::ReadChar => {
                     let chr = self.get_char();
                     self.machine.read_char(chr);
@@ -531,7 +559,6 @@ impl<'a> std::fmt::Debug for Code<'a> {
         for statement in self.code {
             let to_push = match statement {
                 &Statement::Add(value) => "+".to_string().repeat(value as usize),
-                &Statement::Substract(value) => "-".to_string().repeat(value as usize),
                 &Statement::MoveLeft(value) => "<".to_string().repeat(value),
                 &Statement::MoveRight(value) => ">".to_string().repeat(value),
                 &Statement::ReadChar => ",".to_string(),
