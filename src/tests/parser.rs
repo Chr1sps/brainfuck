@@ -51,14 +51,28 @@ fn test_parse_countable_optimization() {
 
 #[test]
 fn test_parse_loop_valid() {
-    let code = String::from("[+-<>]");
+    let code = String::from("[+-<>]+");
     let expected = vec![
+        Statement::new_loop(vec![
+            Statement::Add(1),
+            Statement::Add(255),
+            Statement::MoveLeft(1),
+            Statement::MoveRight(1),
+        ]),
+        Statement::Add(1),
+    ];
+    test_parser(&code, &expected);
+}
+
+#[test]
+fn test_parse_loop_end_of_file() {
+    let code = String::from("[+-<>]");
+    let expected = vec![Statement::new_loop(vec![
         Statement::Add(1),
         Statement::Add(255),
         Statement::MoveLeft(1),
         Statement::MoveRight(1),
-        Statement::JumpIf(0),
-    ];
+    ])];
     test_parser(&code, &expected);
 }
 

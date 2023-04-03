@@ -79,7 +79,7 @@ fn test_iter_valid_tokens() {
         Some(Token::EndLoop),
     ];
     let mut actual: Vec<Option<Token>> = Vec::new();
-    for token in lexer.iter() {
+    for token in lexer.into_iter() {
         actual.push(token);
     }
     assert_eq!(expected.len(), actual.len());

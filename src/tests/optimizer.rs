@@ -10,7 +10,7 @@ fn test_optimize_once_no_optimization() {
         Statement::MoveRight(1),
         Statement::Add(1),
         Statement::MoveLeft(1),
-        Statement::JumpIf(0),
+        // Statement::JumpIf(0),
     ];
     test_optimize_once(&statements, &statements);
 }
@@ -106,20 +106,16 @@ fn test_optimize_once_adds_and_moves() {
 }
 
 #[test]
-fn test_optimize_once_adds_with_loop() {
-    let input: Vec<Statement> = vec![
+fn test_optimize_once_adds_with_loop_end_of_file() {
+    // code: [3+4+[3+4+]]
+    let input: Vec<Statement> = vec![Statement::new_loop(vec![
+        Statement::new_loop(vec![Statement::Add(3), Statement::Add(4)]),
         Statement::Add(3),
         Statement::Add(4),
-        Statement::Add(3),
-        Statement::Add(4),
-        Statement::JumpIf(2),
-        Statement::JumpIf(0),
-    ];
-    let output = vec![
+    ])];
+    let output = vec![Statement::new_loop(vec![
+        Statement::new_loop(vec![Statement::Add(7)]),
         Statement::Add(7),
-        Statement::Add(7),
-        Statement::JumpIf(1),
-        Statement::JumpIf(0),
-    ];
+    ])];
     test_optimize_once(&input, &output);
 }

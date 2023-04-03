@@ -25,7 +25,7 @@ enum Token {
     ReadChar,
 }
 
-#[derive(Copy, Clone, PartialEq, Debug)]
+#[derive(Clone, PartialEq, Debug)]
 enum Statement {
     MoveLeft(usize),
     MoveRight(usize),
@@ -33,6 +33,7 @@ enum Statement {
     Add(u8),
 
     JumpIf(usize),
+    Loop(Box<Vec<Statement>>),
     PutChar,
     ReadChar,
 }
@@ -43,6 +44,9 @@ impl Statement {
     }
     fn is_move(&self) -> bool {
         matches!(self, &(Statement::MoveLeft(_) | Statement::MoveRight(_)))
+    }
+    fn new_loop(statements: Vec<Statement>) -> Self {
+        Self::Loop(Box::new(statements))
     }
 }
 
@@ -177,11 +181,11 @@ impl<T: BufRead> Lexer<T> {
             _ => None,
         }
     }
+    fn ref_iter(&mut self) -> LexerRefIter<'_, T> {
+        LexerRefIter { lexer: self }
+    }
     fn iter(self) -> LexerIter<T> {
         LexerIter { lexer: self }
-    }
-    fn ref_iter(&mut self) -> LexerRefIter<T> {
-        LexerRefIter { lexer: self }
     }
 }
 
@@ -203,7 +207,7 @@ impl<T: BufRead> IntoIterator for Lexer<T> {
     type Item = Option<Token>;
     type IntoIter = LexerIter<T>;
     fn into_iter(self) -> Self::IntoIter {
-        self.iter()
+        LexerIter { lexer: self }
     }
 }
 
@@ -225,7 +229,7 @@ impl<'a, T: BufRead> IntoIterator for &'a mut Lexer<T> {
     type Item = Option<Token>;
     type IntoIter = LexerRefIter<'a, T>;
     fn into_iter(self) -> Self::IntoIter {
-        self.ref_iter()
+        LexerRefIter { lexer: self }
     }
 }
 pub struct Parser<T: BufRead> {
@@ -239,10 +243,44 @@ impl<T: BufRead> Parser<T> {
     fn from_reader(reader: T) -> Self {
         Self::from_lexer(Lexer { reader })
     }
+    fn parse_loop(lexer_iter: &mut LexerRefIter<T>) -> Result<Option<Statement>> {
+        let mut statements: Vec<Statement> = Vec::new();
+        while let Some(opt_token) = lexer_iter.next() {
+            match opt_token {
+                Some(token) => match token {
+                    Token::Increment => statements.push(Statement::Add(1)),
+                    Token::Decrement => statements.push(Statement::Add(u8::MAX)),
+                    Token::ShiftLeft => statements.push(Statement::MoveLeft(1)),
+                    Token::ShiftRight => statements.push(Statement::MoveRight(1)),
+                    Token::PutChar => statements.push(Statement::PutChar),
+                    Token::ReadChar => statements.push(Statement::ReadChar),
+                    Token::StartLoop => {
+                        let opt_loop = Self::parse_loop(lexer_iter)?;
+                        if let Some(stmt_loop) = opt_loop {
+                            statements.push(stmt_loop);
+                        }
+                    }
+                    Token::EndLoop => {
+                        if statements.is_empty() {
+                            return Ok(None);
+                        } else {
+                            return Ok(Some(Statement::new_loop(statements)));
+                        }
+                    }
+                },
+                None => {}
+            }
+        }
+        Err(Error::new(
+            ErrorKind::InvalidData,
+            "Error: '[' found with no matching ']'.".to_string(),
+        ))
+    }
     fn parse(&mut self) -> Result<Vec<Statement>> {
+        let lexer_iter: &mut LexerRefIter<T> = &mut self.lexer.ref_iter();
+
         let mut result = Vec::new();
-        let mut loop_stack: Vec<usize> = Vec::new();
-        for opt_token in &mut self.lexer {
+        while let Some(opt_token) = lexer_iter.next() {
             match opt_token {
                 Some(token) => match token {
                     Token::Increment => result.push(Statement::Add(1)),
@@ -251,35 +289,23 @@ impl<T: BufRead> Parser<T> {
                     Token::ShiftRight => result.push(Statement::MoveRight(1)),
                     Token::PutChar => result.push(Statement::PutChar),
                     Token::ReadChar => result.push(Statement::ReadChar),
-                    Token::StartLoop => loop_stack.push(result.len()),
-                    Token::EndLoop => {
-                        let address_opt = loop_stack.pop();
-                        match address_opt {
-                            Some(address) if address == result.len() => {}
-                            Some(address) => {
-                                result.push(Statement::JumpIf(address));
-                            }
-                            None => {
-                                // return Error("Error: ']' found with no matching '['.".to_string())
-                                return Err(Error::new(
-                                    ErrorKind::InvalidData,
-                                    "Error: ']' found with no matching '['.".to_string(),
-                                ));
-                            }
+                    Token::StartLoop => {
+                        let opt_loop = Self::parse_loop(lexer_iter)?;
+                        if let Some(stmt_loop) = opt_loop {
+                            result.push(stmt_loop);
                         }
+                    }
+                    Token::EndLoop => {
+                        return Err(Error::new(
+                            ErrorKind::InvalidData,
+                            "Error: ']' found with no matching '['.".to_string(),
+                        ));
                     }
                 },
                 None => {}
             }
         }
-        if !loop_stack.is_empty() {
-            Err(Error::new(
-                ErrorKind::InvalidData,
-                "Error: '[' found with no matching ']'.".to_string(),
-            ))
-        } else {
-            Ok(result)
-        }
+        Ok(result)
     }
 }
 
@@ -303,7 +329,7 @@ impl Optimizer {
         return_addresses
     }
 
-    fn generate_optimized_stmt(stmt_type: Statement, value: &mut usize) -> Option<Statement> {
+    fn generate_optimized_stmt(stmt_type: &Statement, value: &mut usize) -> Option<Statement> {
         let result = match value {
             0 => None,
             _ => match stmt_type {
@@ -328,13 +354,13 @@ impl Optimizer {
             if !statement.is_equal_type(&last_statement)
                 && (!statement.is_move() || !last_statement.is_move())
             {
-                match Self::generate_optimized_stmt(last_statement, &mut stmt_count) {
+                match Self::generate_optimized_stmt(&last_statement, &mut stmt_count) {
                     Some(statement) => result.push(statement),
                     None => {}
                 }
             }
             if return_addresses.contains(&index) {
-                match Self::generate_optimized_stmt(last_statement, &mut stmt_count) {
+                match Self::generate_optimized_stmt(&last_statement, &mut stmt_count) {
                     Some(statement) => result.push(statement),
                     None => {}
                 }
@@ -382,15 +408,16 @@ impl Optimizer {
                         stmt_count = *value as usize;
                     }
                 },
-                stmt @ (Statement::PutChar | Statement::ReadChar) => result.push(*stmt),
+                stmt @ (Statement::PutChar | Statement::ReadChar) => result.push(stmt.clone()),
                 Statement::JumpIf(_) => {
                     result.push(Statement::JumpIf(new_return_addresses.pop().unwrap()))
                 }
+                Statement::Loop(_) => todo!(),
             }
             last_statement = cloned;
         }
 
-        match Self::generate_optimized_stmt(last_statement, &mut stmt_count) {
+        match Self::generate_optimized_stmt(&last_statement, &mut stmt_count) {
             Some(statement) => result.push(statement),
             None => {}
         }
@@ -504,11 +531,11 @@ impl<T: BufRead> Interpreter<T> {
         self.enable_get_char_mode();
         let mut index: usize = 0;
         while index < statements.len() {
-            let statement = statements[index];
+            let statement = &statements[index];
             match statement {
-                Statement::MoveLeft(value) => self.machine.move_left(value),
-                Statement::MoveRight(value) => self.machine.move_right(value),
-                Statement::Add(value) => self.machine.add(value),
+                Statement::MoveLeft(value) => self.machine.move_left(*value),
+                Statement::MoveRight(value) => self.machine.move_right(*value),
+                Statement::Add(value) => self.machine.add(*value),
                 Statement::ReadChar => {
                     let chr = self.get_char();
                     self.machine.read_char(chr);
@@ -519,10 +546,11 @@ impl<T: BufRead> Interpreter<T> {
                 }
                 Statement::JumpIf(address) => {
                     if self.machine.check_loop() {
-                        index = address;
+                        index = *address;
                         continue;
                     }
                 }
+                Statement::Loop(_) => todo!(),
             }
             index += 1;
         }
@@ -545,6 +573,7 @@ impl<'a> std::fmt::Debug for Code<'a> {
                 &Statement::ReadChar => ",".to_string(),
                 &Statement::PutChar => ".".to_string(),
                 &Statement::JumpIf(value) => value.to_string(),
+                &Statement::Loop(_) => todo!(),
             };
             info.push_str(&to_push);
         }
