@@ -32,7 +32,6 @@ enum Statement {
 
     Add(u8),
 
-    JumpIf(usize),
     Loop(Box<Vec<Statement>>),
     PutChar,
     ReadChar,
@@ -181,11 +180,8 @@ impl<T: BufRead> Lexer<T> {
             _ => None,
         }
     }
-    fn ref_iter(&mut self) -> LexerRefIter<'_, T> {
+    fn iter(&mut self) -> LexerRefIter<'_, T> {
         LexerRefIter { lexer: self }
-    }
-    fn iter(self) -> LexerIter<T> {
-        LexerIter { lexer: self }
     }
 }
 
@@ -277,7 +273,7 @@ impl<T: BufRead> Parser<T> {
         ))
     }
     fn parse(&mut self) -> Result<Vec<Statement>> {
-        let lexer_iter: &mut LexerRefIter<T> = &mut self.lexer.ref_iter();
+        let lexer_iter: &mut LexerRefIter<T> = &mut self.lexer.iter();
 
         let mut result = Vec::new();
         while let Some(opt_token) = lexer_iter.next() {
@@ -305,6 +301,7 @@ impl<T: BufRead> Parser<T> {
                 None => {}
             }
         }
+        dbg!(Code { code: &result });
         Ok(result)
     }
 }
@@ -316,17 +313,6 @@ struct Optimizer {
 impl Optimizer {
     fn new(statements: Vec<Statement>) -> Self {
         Self { statements }
-    }
-
-    fn get_return_addresses(&mut self) -> Vec<usize> {
-        let mut return_addresses: Vec<usize> = Vec::new();
-        for statement in &self.statements {
-            match statement {
-                Statement::JumpIf(address) => return_addresses.push(*address),
-                _ => {}
-            }
-        }
-        return_addresses
     }
 
     fn generate_optimized_stmt(stmt_type: &Statement, value: &mut usize) -> Option<Statement> {
@@ -343,14 +329,91 @@ impl Optimizer {
         result
     }
 
+    fn optimize_loop(loop_stmt: Statement) -> Option<Statement> {
+        if let Statement::Loop(boxed) = loop_stmt {
+            let mut result: Vec<Statement> = Vec::new();
+            let mut stmt_count: usize = 0;
+            let mut last_statement = Statement::ReadChar;
+            let statements = *boxed;
+            for statement in statements {
+                if !statement.is_equal_type(&last_statement)
+                    && (!statement.is_move() || !last_statement.is_move())
+                {
+                    match Self::generate_optimized_stmt(&last_statement, &mut stmt_count) {
+                        Some(statement) => result.push(statement),
+                        None => {}
+                    }
+                }
+                let mut cloned = statement.clone();
+                match statement {
+                    Statement::MoveLeft(value) => match last_statement {
+                        Statement::MoveLeft(_) => {
+                            stmt_count += value;
+                        }
+                        Statement::MoveRight(_) => {
+                            if stmt_count < value {
+                                stmt_count = value - stmt_count;
+                            } else {
+                                stmt_count -= value;
+                                cloned = last_statement.clone();
+                            }
+                        }
+                        _ => {
+                            stmt_count = value;
+                        }
+                    },
+                    Statement::MoveRight(value) => match last_statement {
+                        Statement::MoveRight(_) => {
+                            stmt_count += value;
+                        }
+                        Statement::MoveLeft(_) => {
+                            if stmt_count < value {
+                                stmt_count = value - stmt_count;
+                            } else {
+                                stmt_count -= value;
+                                cloned = last_statement.clone();
+                            }
+                        }
+                        _ => {
+                            stmt_count = value;
+                        }
+                    },
+                    Statement::Add(value) => match last_statement {
+                        Statement::Add(_) => {
+                            stmt_count = value.wrapping_add(stmt_count as u8) as usize;
+                        }
+                        _ => {
+                            stmt_count = value as usize;
+                        }
+                    },
+                    stmt @ (Statement::PutChar | Statement::ReadChar) => result.push(stmt.clone()),
+                    // Statement::JumpIf(_) => {
+                    //     result.push(Statement::JumpIf(new_return_addresses.pop().unwrap()))
+                    // }
+                    stmt_loop @ Statement::Loop(_) => {
+                        if let Some(optimized) = Self::optimize_loop(stmt_loop.clone()) {
+                            result.push(optimized);
+                        }
+                    }
+                }
+                last_statement = cloned;
+            }
+            match Self::generate_optimized_stmt(&last_statement, &mut stmt_count) {
+                Some(statement) => result.push(statement),
+                None => {}
+            }
+            Some(Statement::new_loop(result))
+        } else {
+            panic!("This is not meant to be used with anything that isn't a loop.")
+        }
+    }
+
     fn optimize_once(&mut self) {
         let mut result: Vec<Statement> = Vec::new();
         let mut stmt_count: usize = 0;
         let mut last_statement = Statement::ReadChar;
-        let return_addresses = self.get_return_addresses();
-        let mut new_return_addresses: Vec<usize> = Vec::new();
 
-        for (index, statement) in (&mut self.statements).into_iter().enumerate() {
+        for statement in (&mut self.statements).into_iter() {
             if !statement.is_equal_type(&last_statement)
                 && (!statement.is_move() || !last_statement.is_move())
             {
@@ -358,13 +421,6 @@ impl Optimizer {
                     Some(statement) => result.push(statement),
                     None => {}
                 }
-            }
-            if return_addresses.contains(&index) {
-                match Self::generate_optimized_stmt(&last_statement, &mut stmt_count) {
-                    Some(statement) => result.push(statement),
-                    None => {}
-                }
-                new_return_addresses.push(result.len());
             }
             let mut cloned = statement.clone();
             match statement {
@@ -409,10 +465,14 @@ impl Optimizer {
                     }
                 },
                 stmt @ (Statement::PutChar | Statement::ReadChar) => result.push(stmt.clone()),
-                Statement::JumpIf(_) => {
-                    result.push(Statement::JumpIf(new_return_addresses.pop().unwrap()))
+                // Statement::JumpIf(_) => {
+                //     result.push(Statement::JumpIf(new_return_addresses.pop().unwrap()))
+                // }
+                stmt_loop @ Statement::Loop(_) => {
+                    if let Some(optimized) = Self::optimize_loop(stmt_loop.clone()) {
+                        result.push(optimized);
+                    }
                 }
-                Statement::Loop(_) => todo!(),
             }
             last_statement = cloned;
         }
@@ -527,11 +587,33 @@ impl<T: BufRead> Interpreter<T> {
         Ok(())
     }
 
+    fn run_loop(&mut self, loop_stmt: Statement) {
+        if let Statement::Loop(boxed) = loop_stmt {
+            let statements = *boxed;
+            for statement in statements {
+                match statement {
+                    Statement::MoveLeft(value) => self.machine.move_left(value),
+                    Statement::MoveRight(value) => self.machine.move_right(value),
+                    Statement::Add(value) => self.machine.add(value),
+                    Statement::ReadChar => {
+                        let chr = self.get_char();
+                        self.machine.read_char(chr);
+                    }
+                    Statement::PutChar => {
+                        let chr = self.machine.put_char();
+                        print!("{}", chr);
+                    }
+                    loop_stmt @ Statement::Loop(_) => self.run_loop(loop_stmt.clone()),
+                }
+            }
+        } else {
+            panic!("This function is ONLY meant to be ran with loops.")
+        }
+    }
+
     fn run_code(&mut self, statements: Vec<Statement>) {
         self.enable_get_char_mode();
-        let mut index: usize = 0;
-        while index < statements.len() {
-            let statement = &statements[index];
+        for statement in &statements {
             match statement {
                 Statement::MoveLeft(value) => self.machine.move_left(*value),
                 Statement::MoveRight(value) => self.machine.move_right(*value),
@@ -544,15 +626,8 @@ impl<T: BufRead> Interpreter<T> {
                     let chr = self.machine.put_char();
                     print!("{}", chr);
                 }
-                Statement::JumpIf(address) => {
-                    if self.machine.check_loop() {
-                        index = *address;
-                        continue;
-                    }
-                }
-                Statement::Loop(_) => todo!(),
+                loop_stmt @ Statement::Loop(_) => self.run_loop(loop_stmt.clone()),
             }
-            index += 1;
         }
         self.disable_get_char_mode();
     }
@@ -561,22 +636,30 @@ impl<T: BufRead> Interpreter<T> {
 struct Code<'a> {
     code: &'a Vec<Statement>,
 }
-
-impl<'a> std::fmt::Debug for Code<'a> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+impl<'a> Code<'a> {
+    fn generate_string(statements: &Vec<Statement>) -> String {
         let mut info: String = String::new();
-        for statement in self.code {
+        for statement in statements {
             let to_push = match statement {
-                &Statement::Add(value) => "+".to_string().repeat(value as usize),
-                &Statement::MoveLeft(value) => "<".to_string().repeat(value),
-                &Statement::MoveRight(value) => ">".to_string().repeat(value),
-                &Statement::ReadChar => ",".to_string(),
-                &Statement::PutChar => ".".to_string(),
-                &Statement::JumpIf(value) => value.to_string(),
-                &Statement::Loop(_) => todo!(),
+                Statement::Add(value) => "+".to_string().repeat(*value as usize),
+                Statement::MoveLeft(value) => "<".to_string().repeat(*value),
+                Statement::MoveRight(value) => ">".to_string().repeat(*value),
+                Statement::ReadChar => ",".to_string(),
+                Statement::PutChar => ".".to_string(),
+                Statement::Loop(boxed) => {
+                    let loop_stmt = boxed;
+                    format!("[{}]", Self::generate_string(&loop_stmt))
+                }
             };
             info.push_str(&to_push);
         }
+        info
+    }
+}
+
+impl<'a> std::fmt::Debug for Code<'a> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let info: String = Self::generate_string(self.code);
         f.debug_struct("Code").field("code", &info).finish()
     }
 }
