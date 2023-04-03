@@ -128,6 +128,11 @@ Max possible index: {}.
     pub fn check_loop(&self) -> bool {
         self.tape[self.index] != 0
     }
+
+    /// Returns a copy of the vector representing the tape.
+    fn get_tape(&self) -> Vec<u8> {
+        self.tape.clone()
+    }
 }
 
 // Brainfuck grammar:
@@ -239,43 +244,11 @@ impl<T: BufRead> Parser<T> {
     fn from_reader(reader: T) -> Self {
         Self::from_lexer(Lexer { reader })
     }
-    fn parse_loop(lexer_iter: &mut LexerRefIter<T>) -> Result<Option<Statement>> {
-        let mut statements: Vec<Statement> = Vec::new();
-        while let Some(opt_token) = lexer_iter.next() {
-            match opt_token {
-                Some(token) => match token {
-                    Token::Increment => statements.push(Statement::Add(1)),
-                    Token::Decrement => statements.push(Statement::Add(u8::MAX)),
-                    Token::ShiftLeft => statements.push(Statement::MoveLeft(1)),
-                    Token::ShiftRight => statements.push(Statement::MoveRight(1)),
-                    Token::PutChar => statements.push(Statement::PutChar),
-                    Token::ReadChar => statements.push(Statement::ReadChar),
-                    Token::StartLoop => {
-                        let opt_loop = Self::parse_loop(lexer_iter)?;
-                        if let Some(stmt_loop) = opt_loop {
-                            statements.push(stmt_loop);
-                        }
-                    }
-                    Token::EndLoop => {
-                        if statements.is_empty() {
-                            return Ok(None);
-                        } else {
-                            return Ok(Some(Statement::new_loop(statements)));
-                        }
-                    }
-                },
-                None => {}
-            }
-        }
-        Err(Error::new(
-            ErrorKind::InvalidData,
-            "Error: '[' found with no matching ']'.".to_string(),
-        ))
-    }
-    fn parse(&mut self) -> Result<Vec<Statement>> {
-        let lexer_iter: &mut LexerRefIter<T> = &mut self.lexer.iter();
-
-        let mut result = Vec::new();
+    fn parse_rec(
+        lexer_iter: &mut LexerRefIter<T>,
+        is_loop: bool,
+    ) -> Result<Option<Vec<Statement>>> {
+        let mut result: Vec<Statement> = Vec::new();
         while let Some(opt_token) = lexer_iter.next() {
             match opt_token {
                 Some(token) => match token {
@@ -286,22 +259,43 @@ impl<T: BufRead> Parser<T> {
                     Token::PutChar => result.push(Statement::PutChar),
                     Token::ReadChar => result.push(Statement::ReadChar),
                     Token::StartLoop => {
-                        let opt_loop = Self::parse_loop(lexer_iter)?;
+                        let opt_loop = Self::parse_rec(lexer_iter, true)?;
                         if let Some(stmt_loop) = opt_loop {
-                            result.push(stmt_loop);
+                            result.push(Statement::new_loop(stmt_loop));
                         }
                     }
                     Token::EndLoop => {
-                        return Err(Error::new(
-                            ErrorKind::InvalidData,
-                            "Error: ']' found with no matching '['.".to_string(),
-                        ));
+                        if is_loop {
+                            if result.is_empty() {
+                                return Ok(None);
+                            } else {
+                                return Ok(Some(result));
+                            }
+                        } else {
+                            return Err(Error::new(
+                                ErrorKind::InvalidData,
+                                "Error: ']' found with no matching '['.".to_string(),
+                            ));
+                        }
                     }
                 },
                 None => {}
             }
         }
-        Ok(result)
+        if is_loop {
+            Err(Error::new(
+                ErrorKind::InvalidData,
+                "Error: '[' found with no matching ']'.".to_string(),
+            ))
+        } else {
+            Ok(Some(result))
+        }
+    }
+
+    fn parse(&mut self) -> Result<Vec<Statement>> {
+        let lexer_iter: &mut LexerRefIter<T> = &mut self.lexer.iter();
+        let parsed_opt = Self::parse_rec(lexer_iter, false)?;
+        Ok(parsed_opt.unwrap_or_default())
     }
 }
 
@@ -328,91 +322,12 @@ impl Optimizer {
         result
     }
 
-    fn optimize_loop(loop_stmt: Statement) -> Option<Statement> {
-        if let Statement::Loop(boxed) = loop_stmt {
-            let mut result: Vec<Statement> = Vec::new();
-            let mut stmt_count: usize = 0;
-            let mut last_statement = Statement::ReadChar;
-            let statements = *boxed;
-            for statement in statements {
-                if !statement.is_equal_type(&last_statement)
-                    && (!statement.is_move() || !last_statement.is_move())
-                {
-                    match Self::generate_optimized_stmt(&last_statement, &mut stmt_count) {
-                        Some(statement) => result.push(statement),
-                        None => {}
-                    }
-                }
-                let mut cloned = statement.clone();
-                match statement {
-                    Statement::MoveLeft(value) => match last_statement {
-                        Statement::MoveLeft(_) => {
-                            stmt_count += value;
-                        }
-                        Statement::MoveRight(_) => {
-                            if stmt_count < value {
-                                stmt_count = value - stmt_count;
-                            } else {
-                                stmt_count -= value;
-                                cloned = last_statement.clone();
-                            }
-                        }
-                        _ => {
-                            stmt_count = value;
-                        }
-                    },
-                    Statement::MoveRight(value) => match last_statement {
-                        Statement::MoveRight(_) => {
-                            stmt_count += value;
-                        }
-                        Statement::MoveLeft(_) => {
-                            if stmt_count < value {
-                                stmt_count = value - stmt_count;
-                            } else {
-                                stmt_count -= value;
-                                cloned = last_statement.clone();
-                            }
-                        }
-                        _ => {
-                            stmt_count = value;
-                        }
-                    },
-                    Statement::Add(value) => match last_statement {
-                        Statement::Add(_) => {
-                            stmt_count = value.wrapping_add(stmt_count as u8) as usize;
-                        }
-                        _ => {
-                            stmt_count = value as usize;
-                        }
-                    },
-                    stmt @ (Statement::PutChar | Statement::ReadChar) => result.push(stmt.clone()),
-                    // Statement::JumpIf(_) => {
-                    //     result.push(Statement::JumpIf(new_return_addresses.pop().unwrap()))
-                    // }
-                    stmt_loop @ Statement::Loop(_) => {
-                        if let Some(optimized) = Self::optimize_loop(stmt_loop.clone()) {
-                            result.push(optimized);
-                        }
-                    }
-                }
-                last_statement = cloned;
-            }
-            match Self::generate_optimized_stmt(&last_statement, &mut stmt_count) {
-                Some(statement) => result.push(statement),
-                None => {}
-            }
-            Some(Statement::new_loop(result))
-        } else {
-            panic!("This is not meant to be used with anything that isn't a loop.")
-        }
-    }
-
-    fn optimize_once(&mut self) {
+    fn optimize_rec(statements: &Vec<Statement>) -> Option<Vec<Statement>> {
         let mut result: Vec<Statement> = Vec::new();
         let mut stmt_count: usize = 0;
         let mut last_statement = Statement::ReadChar;
 
-        for statement in (&mut self.statements).into_iter() {
+        for statement in statements {
             if !statement.is_equal_type(&last_statement)
                 && (!statement.is_move() || !last_statement.is_move())
             {
@@ -425,13 +340,13 @@ impl Optimizer {
             match statement {
                 Statement::MoveLeft(value) => match last_statement {
                     Statement::MoveLeft(_) => {
-                        stmt_count += *value;
+                        stmt_count += value;
                     }
                     Statement::MoveRight(_) => {
                         if stmt_count < *value {
-                            stmt_count = *value - stmt_count;
+                            stmt_count = value - stmt_count;
                         } else {
-                            stmt_count -= *value;
+                            stmt_count -= value;
                             cloned = last_statement.clone();
                         }
                     }
@@ -441,13 +356,13 @@ impl Optimizer {
                 },
                 Statement::MoveRight(value) => match last_statement {
                     Statement::MoveRight(_) => {
-                        stmt_count += *value;
+                        stmt_count += value;
                     }
                     Statement::MoveLeft(_) => {
                         if stmt_count < *value {
-                            stmt_count = *value - stmt_count;
+                            stmt_count = value - stmt_count;
                         } else {
-                            stmt_count -= *value;
+                            stmt_count -= value;
                             cloned = last_statement.clone();
                         }
                     }
@@ -464,23 +379,24 @@ impl Optimizer {
                     }
                 },
                 stmt @ (Statement::PutChar | Statement::ReadChar) => result.push(stmt.clone()),
-                // Statement::JumpIf(_) => {
-                //     result.push(Statement::JumpIf(new_return_addresses.pop().unwrap()))
-                // }
-                stmt_loop @ Statement::Loop(_) => {
-                    if let Some(optimized) = Self::optimize_loop(stmt_loop.clone()) {
-                        result.push(optimized);
+                Statement::Loop(code) => {
+                    if let Some(optimized) = Self::optimize_rec(&code) {
+                        result.push(Statement::new_loop(optimized));
                     }
                 }
             }
             last_statement = cloned;
         }
-
         match Self::generate_optimized_stmt(&last_statement, &mut stmt_count) {
             Some(statement) => result.push(statement),
             None => {}
         }
-        self.statements = result;
+        Some(result)
+    }
+
+    fn optimize_once(&mut self) {
+        let opt_result = Self::optimize_rec(&self.statements);
+        self.statements = opt_result.unwrap_or_default();
     }
 
     fn optimize(&mut self, max_iterations: u32) {
@@ -520,7 +436,7 @@ impl Interpreter<BufReader<File>> {
         if !path.is_file() {
             return Err(Error::new(
                 ErrorKind::InvalidData,
-                "Source code path is a directory.",
+                format!("Data cannot be read from: {}", file_name),
             ));
         }
         let file = File::open(path)?;
@@ -582,7 +498,6 @@ impl<T: BufRead> Interpreter<T> {
         let mut optimizer = Optimizer::new(statements);
         optimizer.optimize(max_iterations);
         let statements = optimizer.yield_back();
-        dbg!(Code { code: &statements });
         self.run_code(&statements);
         Ok(())
     }
@@ -610,6 +525,10 @@ impl<T: BufRead> Interpreter<T> {
             }
         }
         self.disable_get_char_mode();
+    }
+
+    pub fn get_tape(&self) -> Vec<u8> {
+        self.machine.get_tape()
     }
 }
 

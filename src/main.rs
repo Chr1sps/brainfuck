@@ -1,6 +1,10 @@
 use brainfuck::Interpreter;
 use clap::Parser as ClapParser;
-use std::io::{Error, ErrorKind, Result};
+use std::{
+    fmt::Debug,
+    fs::File,
+    io::{Error, ErrorKind, Result, Write},
+};
 
 #[derive(ClapParser, Debug)]
 #[command(name = "Brainfuck interpreter")]
@@ -15,23 +19,25 @@ struct Cli {
     /// Name of the file to open.
     file: Option<String>,
 
-    #[arg(short, long, value_name = "COUNT")]
+    #[arg(short = 'O', long, value_name = "COUNT")]
     /// How many iterations of optimizing to run on the parsed code. Entering
     /// zero means that the optimizer will run until the code is fully
     /// optimized.
     optimize: Option<u32>,
 
-    #[arg(default_value_t = false, long)]
-    /// Outputs the machine binary data. Exclusive with "--hex". TODO
+    #[arg(default_value_t = false, short, long)]
+    /// If set alongside the "--output" flag, outputs the data in binary
+    /// format. Exclusive with "--hex".
     binary: bool,
 
-    #[arg(default_value_t = false, long)]
-    /// Outputs the machine hex data. Exclusive with "--binary". TODO
+    #[arg(default_value_t = false, short = 'H', long)]
+    /// If set alongside the "--output" flag, outputs the data in hex format.
+    /// Exclusive with "--binary".
     hex: bool,
 
-    #[arg(long, value_name = "FILE")]
+    #[arg(short, long, value_name = "FILE")]
     /// Outputs the machine data to a given FILE. Use "--hex" and "--binary" to
-    /// switch from ASCII encoding to other formats. TODO
+    /// switch from ASCII encoding to other formats.
     output: Option<String>,
 }
 
@@ -45,6 +51,29 @@ fn main() -> Result<()> {
                 interpreter.run_with_optimization(value)?;
             } else {
                 interpreter.run()?;
+            }
+            if let Some(path) = args.output {
+                let mut out_file = File::create(path)?;
+                let tape = interpreter.get_tape();
+                let tape_data = tape.as_slice();
+                if args.binary && args.hex {
+                    return Err(Error::new(
+                        ErrorKind::InvalidData,
+                        "Binary and hex flags can't be set simultaneously.",
+                    ));
+                } else if args.binary {
+                    out_file.write_all(tape_data)?;
+                } else if args.hex {
+                    for value in tape {
+                        out_file.write_all(format!("0x{value:x}").as_bytes())?;
+                        out_file.write_all(",".as_bytes())?;
+                    }
+                } else {
+                    for value in tape {
+                        out_file.write_all(value.to_string().as_bytes())?;
+                        out_file.write_all(",".as_bytes())?;
+                    }
+                }
             }
             Ok(())
         }
