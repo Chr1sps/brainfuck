@@ -301,7 +301,6 @@ impl<T: BufRead> Parser<T> {
                 None => {}
             }
         }
-        dbg!(Code { code: &result });
         Ok(result)
     }
 }
@@ -574,7 +573,7 @@ impl<T: BufRead> Interpreter<T> {
 
     pub fn run(&mut self) -> Result<()> {
         let statements = self.parser.parse()?;
-        self.run_code(statements);
+        self.run_code(&statements);
         Ok(())
     }
 
@@ -583,37 +582,14 @@ impl<T: BufRead> Interpreter<T> {
         let mut optimizer = Optimizer::new(statements);
         optimizer.optimize(max_iterations);
         let statements = optimizer.yield_back();
-        self.run_code(statements);
+        dbg!(Code { code: &statements });
+        self.run_code(&statements);
         Ok(())
     }
 
-    fn run_loop(&mut self, loop_stmt: Statement) {
-        if let Statement::Loop(boxed) = loop_stmt {
-            let statements = *boxed;
-            for statement in statements {
-                match statement {
-                    Statement::MoveLeft(value) => self.machine.move_left(value),
-                    Statement::MoveRight(value) => self.machine.move_right(value),
-                    Statement::Add(value) => self.machine.add(value),
-                    Statement::ReadChar => {
-                        let chr = self.get_char();
-                        self.machine.read_char(chr);
-                    }
-                    Statement::PutChar => {
-                        let chr = self.machine.put_char();
-                        print!("{}", chr);
-                    }
-                    loop_stmt @ Statement::Loop(_) => self.run_loop(loop_stmt.clone()),
-                }
-            }
-        } else {
-            panic!("This function is ONLY meant to be ran with loops.")
-        }
-    }
-
-    fn run_code(&mut self, statements: Vec<Statement>) {
+    fn run_code(&mut self, statements: &Vec<Statement>) {
         self.enable_get_char_mode();
-        for statement in &statements {
+        for statement in statements {
             match statement {
                 Statement::MoveLeft(value) => self.machine.move_left(*value),
                 Statement::MoveRight(value) => self.machine.move_right(*value),
@@ -626,7 +602,11 @@ impl<T: BufRead> Interpreter<T> {
                     let chr = self.machine.put_char();
                     print!("{}", chr);
                 }
-                loop_stmt @ Statement::Loop(_) => self.run_loop(loop_stmt.clone()),
+                Statement::Loop(boxed) => {
+                    while self.machine.check_loop() {
+                        self.run_code(boxed);
+                    }
+                }
             }
         }
         self.disable_get_char_mode();
@@ -641,19 +621,19 @@ impl<'a> Code<'a> {
         let mut info: String = String::new();
         for statement in statements {
             let to_push = match statement {
-                Statement::Add(value) => "+".to_string().repeat(*value as usize),
-                Statement::MoveLeft(value) => "<".to_string().repeat(*value),
-                Statement::MoveRight(value) => ">".to_string().repeat(*value),
-                Statement::ReadChar => ",".to_string(),
-                Statement::PutChar => ".".to_string(),
+                Statement::Add(value) => format!("{}+ ", *value),
+                Statement::MoveLeft(value) => format!("{}< ", *value),
+                Statement::MoveRight(value) => format!("{}> ", *value),
+                Statement::ReadChar => ", ".to_string(),
+                Statement::PutChar => ". ".to_string(),
                 Statement::Loop(boxed) => {
                     let loop_stmt = boxed;
-                    format!("[{}]", Self::generate_string(&loop_stmt))
+                    format!("[ {}] ", Self::generate_string(&loop_stmt))
                 }
             };
             info.push_str(&to_push);
         }
-        info
+        info.trim_end().to_string()
     }
 }
 
