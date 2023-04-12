@@ -78,8 +78,8 @@ fn main() -> Result<()> {
             Ok(())
         }
         None => Err(Error::new(
-            ErrorKind::NotFound,
-            "No file has been specified",
+            ErrorKind::Other,
+            "Interactive mode not yet implemented.",
         )),
     }
 }
