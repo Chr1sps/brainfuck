@@ -1,10 +1,10 @@
 [package]
 name = "binter"
-author = "Chr1sps"
+authors = ["Chr1sps"]
 license = "MIT"
 version = "1.0.0"
 edition = "2021"
-about = "Brainfuck interpreter for unix based systems."
+description = "Brainfuck interpreter for unix based systems."
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
