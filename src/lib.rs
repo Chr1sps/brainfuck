@@ -1,6 +1,5 @@
-// #[cfg(test)]
-// mod tests;
-
+//! This module exports brainfuck machine and interpreter implementations.
+#![warn(missing_docs)]
 use std::cmp::Ordering;
 use std::fmt;
 use std::fs::File;
@@ -49,6 +48,10 @@ impl Statement {
     }
 }
 
+/// This struct is used as an implementation of a brainfuck-compatible
+/// Turing-like machine that supports basic operations needed for such
+/// compilations. This machine works under an assumption that chars can be
+/// converted into [`u8`] freely through ASCII decoding and encoding.
 pub struct BrainfuckMachine {
     /// Size of the tape vector.
     size: usize,
@@ -233,7 +236,7 @@ impl<'a, T: BufRead> IntoIterator for &'a mut Lexer<T> {
         LexerRefIter { lexer: self }
     }
 }
-pub struct Parser<T: BufRead> {
+struct Parser<T: BufRead> {
     lexer: Lexer<T>,
 }
 
@@ -424,6 +427,8 @@ impl Optimizer {
     }
 }
 
+/// A brainfuck interpreter class that reads code from a file / [`BufRead`]
+/// instance, parses, optimizes and runs it.
 pub struct Interpreter<T: BufRead> {
     parser: Parser<T>,
     machine: BrainfuckMachine,
@@ -431,6 +436,9 @@ pub struct Interpreter<T: BufRead> {
 }
 
 impl Interpreter<BufReader<File>> {
+    /// Creates a new [`Interpreter<BufReader<File>>`] instance wrapped in a
+    /// [`Result`] object. If there were any problems when reading a file
+    /// the function will return an [`std::io::Error`] instance.
     pub fn from_file(file_name: &str, machine_size: usize) -> Result<Self> {
         let path = Path::new(file_name);
         if !path.is_file() {
@@ -450,6 +458,8 @@ impl Interpreter<BufReader<File>> {
 }
 
 impl<T: BufRead> Interpreter<T> {
+    /// Creates a new [`Interpreter`] instance from a [`BufRead`] implementor
+    /// with a given tape size.
     pub fn from_reader(reader: T, machine_size: usize) -> Self {
         Self {
             parser: Parser::from_reader(reader),
@@ -487,12 +497,30 @@ impl<T: BufRead> Interpreter<T> {
         .unwrap();
     }
 
+    /// Parses the code that was contained within the [`BufRead`] instance
+    /// passed to the constructor (or within a given file, if the
+    /// [`Interpreter::from_file`] constructor has been
+    /// called) and then runs it. This function returns an [`Ok(())`] instance
+    /// in case of no issues and a wrapped [`std::io::Error`] if there are any.
+    ///
+    /// [`Interpreter::from_file`]: ./struct.Interpreter.html#method.from_file
     pub fn run(&mut self) -> Result<()> {
         let statements = self.parser.parse()?;
         self.run_code(&statements);
         Ok(())
     }
 
+    /// Parses the code that was contained within the [`BufRead`] instance
+    /// passed to the constructor (or within a given file, if the
+    /// [`Interpreter::from_file`] constructor has been
+    /// called) and then runs it with a given optimization level. The
+    /// `max_iterations` parameter specifies the maximum amount of optimization
+    /// iterations that will be run on the code. If `max_iterations` is equal
+    /// to `0`, then the code will be optimized fully. This function returns an
+    /// [`Ok(())`] instancein case of no issues and a wrapped
+    /// [`std::io::Error`] if there are any.
+    ///
+    /// [`Interpreter::from_file`]: ./struct.Interpreter.html#method.from_file
     pub fn run_with_optimization(&mut self, max_iterations: u32) -> Result<()> {
         let statements = self.parser.parse()?;
         let mut optimizer = Optimizer::new(statements);
@@ -527,6 +555,10 @@ impl<T: BufRead> Interpreter<T> {
         self.disable_get_char_mode();
     }
 
+    /// Returns a [`Vec<u8>`] instance represeting the tape of the underlying
+    /// [machine].
+    ///
+    /// [machine]: BrainfuckMachine
     pub fn get_tape(&self) -> Vec<u8> {
         self.machine.get_tape()
     }

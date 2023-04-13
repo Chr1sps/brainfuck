@@ -1,4 +1,4 @@
-use brainfuck::Interpreter;
+use binter::Interpreter;
 use clap::Parser as ClapParser;
 use std::{
     fmt::Debug,
@@ -7,10 +7,8 @@ use std::{
 };
 
 #[derive(ClapParser, Debug)]
-#[command(name = "Brainfuck interpreter")]
-#[command(author = "Chr1sps")]
-#[command(version = "1.0")]
-#[command(about = "Brainfuck interpreter for unix based systems.", long_about = None)]
+#[command(name = "Binter - a Brainfuck interpreter.")]
+#[command(author, version, about, long_about = None)]
 struct Cli {
     /// Number of cells that the tape has.
     #[arg(short, long, value_name = "SIZE")]
