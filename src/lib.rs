@@ -427,54 +427,17 @@ impl Optimizer {
     }
 }
 
-/// A brainfuck interpreter class that reads code from a file / [`BufRead`]
-/// instance, parses, optimizes and runs it.
-pub struct Interpreter<T: BufRead> {
-    parser: Parser<T>,
-    machine: BrainfuckMachine,
+#[cfg(target_family = "unix")]
+struct Console {
     console: termios::Termios,
 }
 
-impl Interpreter<BufReader<File>> {
-    /// Creates a new [`Interpreter<BufReader<File>>`] instance wrapped in a
-    /// [`Result`] object. If there were any problems when reading a file
-    /// the function will return an [`std::io::Error`] instance.
-    pub fn from_file(file_name: &str, machine_size: usize) -> Result<Self> {
-        let path = Path::new(file_name);
-        if !path.is_file() {
-            return Err(Error::new(
-                ErrorKind::InvalidData,
-                format!("Data cannot be read from: {}", file_name),
-            ));
-        }
-        let file = File::open(path)?;
-        let reader: BufReader<File> = BufReader::new(file);
-        Ok(Self {
-            parser: Parser::<BufReader<File>>::from_reader(reader),
-            machine: BrainfuckMachine::new(machine_size),
-            console: termios::Termios::from_fd(0).unwrap(),
-        })
-    }
-}
-
-impl<T: BufRead> Interpreter<T> {
-    /// Creates a new [`Interpreter`] instance from a [`BufRead`] implementor
-    /// with a given tape size.
-    pub fn from_reader(reader: T, machine_size: usize) -> Self {
+#[cfg(target_family = "unix")]
+impl Console {
+    fn new() -> Self {
         Self {
-            parser: Parser::from_reader(reader),
-            machine: BrainfuckMachine::new(machine_size),
             console: termios::Termios::from_fd(0).unwrap(),
         }
-    }
-
-    fn get_char(&mut self) -> char {
-        let stdout = io::stdout();
-        let mut buffer = [0; 1];
-        let mut reader = io::stdin();
-        stdout.lock().flush().unwrap();
-        reader.read_exact(&mut buffer).unwrap();
-        buffer[0] as char
     }
 
     fn enable_get_char_mode(&mut self) {
@@ -496,6 +459,57 @@ impl<T: BufRead> Interpreter<T> {
         )
         .unwrap();
     }
+}
+
+/// A brainfuck interpreter class that reads code from a file / [`BufRead`]
+/// instance, parses, optimizes and runs it.
+pub struct Interpreter<T: BufRead> {
+    parser: Parser<T>,
+    machine: BrainfuckMachine,
+    console: Console,
+}
+
+impl Interpreter<BufReader<File>> {
+    /// Creates a new [`Interpreter<BufReader<File>>`] instance wrapped in a
+    /// [`Result`] object. If there were any problems when reading a file
+    /// the function will return an [`std::io::Error`] instance.
+    pub fn from_file(file_name: &str, machine_size: usize) -> Result<Self> {
+        let path = Path::new(file_name);
+        if !path.is_file() {
+            return Err(Error::new(
+                ErrorKind::InvalidData,
+                format!("Data cannot be read from: {}", file_name),
+            ));
+        }
+        let file = File::open(path)?;
+        let reader: BufReader<File> = BufReader::new(file);
+        Ok(Self {
+            parser: Parser::<BufReader<File>>::from_reader(reader),
+            machine: BrainfuckMachine::new(machine_size),
+            console: Console::new(),
+        })
+    }
+}
+
+impl<T: BufRead> Interpreter<T> {
+    /// Creates a new [`Interpreter`] instance from a [`BufRead`] implementor
+    /// with a given tape size.
+    pub fn from_reader(reader: T, machine_size: usize) -> Self {
+        Self {
+            parser: Parser::from_reader(reader),
+            machine: BrainfuckMachine::new(machine_size),
+            console: Console::new(),
+        }
+    }
+
+    fn get_char(&mut self) -> char {
+        let stdout = io::stdout();
+        let mut buffer = [0; 1];
+        let mut reader = io::stdin();
+        stdout.lock().flush().unwrap();
+        reader.read_exact(&mut buffer).unwrap();
+        buffer[0] as char
+    }
 
     /// Parses the code that was contained within the [`BufRead`] instance
     /// passed to the constructor (or within a given file, if the
@@ -506,7 +520,9 @@ impl<T: BufRead> Interpreter<T> {
     /// [`Interpreter::from_file`]: ./struct.Interpreter.html#method.from_file
     pub fn run(&mut self) -> Result<()> {
         let statements = self.parser.parse()?;
+        self.console.enable_get_char_mode();
         self.run_code(&statements);
+        self.console.disable_get_char_mode();
         Ok(())
     }
 
@@ -526,12 +542,13 @@ impl<T: BufRead> Interpreter<T> {
         let mut optimizer = Optimizer::new(statements);
         optimizer.optimize(max_iterations);
         let statements = optimizer.yield_back();
+        self.console.enable_get_char_mode();
         self.run_code(&statements);
+        self.console.disable_get_char_mode();
         Ok(())
     }
 
     fn run_code(&mut self, statements: &Vec<Statement>) {
-        self.enable_get_char_mode();
         for statement in statements {
             match statement {
                 Statement::MoveLeft(value) => self.machine.move_left(*value),
@@ -552,7 +569,6 @@ impl<T: BufRead> Interpreter<T> {
                 }
             }
         }
-        self.disable_get_char_mode();
     }
 
     /// Returns a [`Vec<u8>`] instance represeting the tape of the underlying
