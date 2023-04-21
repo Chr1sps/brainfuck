@@ -4,7 +4,6 @@ use std::cmp::Ordering;
 use std::fmt;
 use std::fs::File;
 use std::io::{self, BufRead, BufReader, Error, ErrorKind, Read, Result, Write};
-use std::os::unix::io::AsRawFd;
 use std::path::Path;
 
 #[cfg(test)]
@@ -441,6 +440,7 @@ impl Console {
     }
 
     fn enable_get_char_mode(&mut self) {
+        use std::os::unix::io::AsRawFd;
         let mut new_termios = self.console.clone();
         new_termios.c_lflag &= !(termios::ICANON);
         termios::tcsetattr(
@@ -452,6 +452,7 @@ impl Console {
     }
 
     fn disable_get_char_mode(&mut self) {
+        use std::os::unix::io::AsRawFd;
         termios::tcsetattr(
             std::io::Stdin::as_raw_fd(&std::io::stdin()),
             termios::TCSANOW,
